@@ -1,0 +1,462 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>RoBoot</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<canvas id="bg-canvas"></canvas>
+
+<!-- ===== SPLASH SCREEN (shown on launch) ===== -->
+<div id="splash-screen">
+  <div class="splash-content">
+    <svg class="splash-logo" viewBox="0 0 32 32" width="56" height="56" fill="none">
+      <rect class="splash-sq sq1" x="4" y="4" width="11" height="11" rx="2" fill="#fff"/>
+      <rect class="splash-sq sq2" x="17" y="4" width="11" height="11" rx="2" fill="#fff" opacity="0.6"/>
+      <rect class="splash-sq sq3" x="4" y="17" width="11" height="11" rx="2" fill="#fff" opacity="0.6"/>
+      <rect class="splash-sq sq4" x="17" y="17" width="11" height="11" rx="2" fill="#fff" opacity="0.3"/>
+    </svg>
+    <div class="splash-title">RoBoot</div>
+    <div class="splash-bar"><div class="splash-bar-fill"></div></div>
+  </div>
+</div>
+
+<!-- ===== THEME TRANSITION (shown when a theme is applied) ===== -->
+<div id="theme-transition">
+  <div class="tt-content">
+    <svg class="tt-logo" viewBox="0 0 32 32" width="36" height="36" fill="none">
+      <rect x="4" y="4" width="11" height="11" rx="2" fill="#fff"/>
+      <rect x="17" y="4" width="11" height="11" rx="2" fill="#fff" opacity="0.6"/>
+      <rect x="4" y="17" width="11" height="11" rx="2" fill="#fff" opacity="0.6"/>
+      <rect x="17" y="17" width="11" height="11" rx="2" fill="#fff" opacity="0.3"/>
+    </svg>
+    <div class="tt-label">Applying theme...</div>
+  </div>
+</div>
+
+<!-- ===== LOGIN SCREEN ===== -->
+<div id="login-screen">
+  <div class="login-card">
+    <div class="login-logo">
+      <svg viewBox="0 0 32 32" width="36" height="36" fill="none">
+        <rect x="4" y="4" width="11" height="11" rx="2" fill="#fff"/>
+        <rect x="17" y="4" width="11" height="11" rx="2" fill="#fff" opacity="0.6"/>
+        <rect x="4" y="17" width="11" height="11" rx="2" fill="#fff" opacity="0.6"/>
+        <rect x="17" y="17" width="11" height="11" rx="2" fill="#fff" opacity="0.3"/>
+      </svg>
+      <div>
+        <div class="login-app-name">RoBoot</div>
+        <div class="login-app-sub">for ROBLOX</div>
+      </div>
+    </div>
+    <h2 class="login-title">Sign in to continue</h2>
+    <p class="login-desc">Connect your Roblox account to access your games, friends, and profile.</p>
+    <button class="login-btn" id="loginBtn">
+      <svg viewBox="0 0 32 32" width="18" height="18" fill="none">
+        <rect x="3" y="3" width="12" height="12" rx="1.5" fill="#fff"/>
+        <rect x="17" y="3" width="12" height="12" rx="1.5" fill="#fff" opacity="0.7"/>
+        <rect x="3" y="17" width="12" height="12" rx="1.5" fill="#fff" opacity="0.7"/>
+        <rect x="17" y="17" width="12" height="12" rx="1.5" fill="#fff" opacity="0.4"/>
+      </svg>
+      Login with Roblox
+    </button>
+    <p class="login-note">Opens the official Roblox login page in your browser</p>
+  </div>
+</div>
+
+<!-- Draggable strip — stops well clear of the window buttons so the two regions never overlap -->
+<div class="titlebar-drag"></div>
+
+<!-- WINDOW CONTROLS — fixed, outside all drag regions -->
+<div class="window-bar" id="windowBar" style="-webkit-app-region:no-drag; pointer-events:auto;">
+  <button type="button" class="win-btn close"    id="winClose"    aria-label="Close"    style="-webkit-app-region:no-drag; pointer-events:auto;"></button>
+  <button type="button" class="win-btn minimize" id="winMinimize" aria-label="Minimize" style="-webkit-app-region:no-drag; pointer-events:auto;"></button>
+  <button type="button" class="win-btn maximize" id="winMaximize" aria-label="Maximize" style="-webkit-app-region:no-drag; pointer-events:auto;"></button>
+</div>
+<!-- window control click handlers are wired once, in app.js -->
+
+<!-- ===== MAIN APP ===== -->
+<div class="app" id="app" style="display:none">
+
+  <aside class="sidebar">
+    <div class="logo">
+      <svg viewBox="0 0 28 28" width="24" height="24" fill="none">
+        <rect x="3" y="3" width="10" height="10" rx="1.5" fill="#fff"/>
+        <rect x="15" y="3" width="10" height="10" rx="1.5" fill="#fff" opacity="0.6"/>
+        <rect x="3" y="15" width="10" height="10" rx="1.5" fill="#fff" opacity="0.6"/>
+        <rect x="15" y="15" width="10" height="10" rx="1.5" fill="#fff" opacity="0.3"/>
+      </svg>
+      <span class="logo-text"><strong>RoBoot</strong> <span class="logo-for">for ROBLOX</span></span>
+    </div>
+
+    <div class="sidebar-profile">
+      <div class="sp-avatar">
+        <div class="sp-avatar-inner">--</div>
+        <span class="sp-status-dot"></span>
+      </div>
+      <div class="sp-info">
+        <span class="sp-name">Loading...</span>
+        <span class="sp-handle">@...</span>
+      </div>
+    </div>
+
+    <nav class="nav">
+      <a href="#" class="nav-item active" data-page="home">
+        <svg class="nav-icon" viewBox="0 0 20 20" fill="currentColor"><path d="M10.707 2.293a1 1 0 00-1.414 0l-7 7a1 1 0 001.414 1.414L4 10.414V17a1 1 0 001 1h3a1 1 0 001-1v-2a1 1 0 011-1h2a1 1 0 011 1v2a1 1 0 001 1h3a1 1 0 001-1v-6.586l.293.293a1 1 0 001.414-1.414l-7-7z"/></svg>
+        <span>Home</span>
+        <div class="nav-glow"></div>
+      </a>
+      <a href="#" class="nav-item" data-page="games">
+        <svg class="nav-icon" viewBox="0 0 20 20" fill="currentColor"><path d="M11 17a1 1 0 001.447.894l4-2A1 1 0 0017 15V9.236a1 1 0 00-1.447-.894l-4 2a1 1 0 00-.553.894V17zM15.211 6.276a1 1 0 000-1.788l-4.764-2.382a1 1 0 00-.894 0L4.789 4.488a1 1 0 000 1.788l4.764 2.382a1 1 0 00.894 0l4.764-2.382zM4.447 8.342A1 1 0 003 9.236V15a1 1 0 00.553.894l4 2A1 1 0 009 17v-5.764a1 1 0 00-.553-.894l-4-2z"/></svg>
+        <span>Games</span>
+        <div class="nav-glow"></div>
+      </a>
+      <a href="#" class="nav-item" data-page="friends">
+        <svg class="nav-icon" viewBox="0 0 20 20" fill="currentColor"><path d="M9 6a3 3 0 11-6 0 3 3 0 016 0zM17 6a3 3 0 11-6 0 3 3 0 016 0zM12.93 17c.046-.327.07-.66.07-1a6.97 6.97 0 00-1.5-4.33A5 5 0 0119 16v1h-6.07zM6 11a5 5 0 015 5v1H1v-1a5 5 0 015-5z"/></svg>
+        <span>Friends</span>
+        <span class="nav-badge" id="friendsOnlineBadge" style="display:none">0</span>
+        <div class="nav-glow"></div>
+      </a>
+      <a href="#" class="nav-item" data-page="settings">
+        <svg class="nav-icon" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M11.49 3.17c-.38-1.56-2.6-1.56-2.98 0a1.532 1.532 0 01-2.286.948c-1.372-.836-2.942.734-2.106 2.106.54.886.061 2.042-.947 2.287-1.561.379-1.561 2.6 0 2.978a1.532 1.532 0 01.947 2.287c-.836 1.372.734 2.942 2.106 2.106a1.532 1.532 0 012.287.947c.379 1.561 2.6 1.561 2.978 0a1.533 1.533 0 012.287-.947c1.372.836 2.942-.734 2.106-2.106a1.533 1.533 0 01.947-2.287c1.561-.379 1.561-2.6 0-2.978a1.532 1.532 0 01-.947-2.287c.836-1.372-.734-2.942-2.106-2.106a1.532 1.532 0 01-2.287-.947zM10 13a3 3 0 100-6 3 3 0 000 6z" clip-rule="evenodd"/></svg>
+        <span>Settings</span>
+        <div class="nav-glow"></div>
+      </a>
+    </nav>
+
+    <div class="sidebar-divider"></div>
+
+    <nav class="nav nav-secondary">
+      <a href="#" class="nav-item">
+        <svg class="nav-icon" viewBox="0 0 20 20" fill="currentColor"><path d="M4 3a2 2 0 100 4h12a2 2 0 100-4H4zM3 8h14v7a2 2 0 01-2 2H5a2 2 0 01-2-2V8z"/></svg>
+        <span>Inventory</span>
+        <div class="nav-glow"></div>
+      </a>
+      <a href="#" class="nav-item">
+        <svg class="nav-icon" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-6-3a2 2 0 11-4 0 2 2 0 014 0zm-2 4a5 5 0 00-4.546 2.916A5.986 5.986 0 0010 16a5.986 5.986 0 004.546-2.084A5 5 0 0010 11z" clip-rule="evenodd"/></svg>
+        <span>Avatar</span>
+        <div class="nav-glow"></div>
+      </a>
+      <a href="#" class="nav-item">
+        <svg class="nav-icon" viewBox="0 0 20 20" fill="currentColor"><path d="M13 6a3 3 0 11-6 0 3 3 0 016 0zM18 8a2 2 0 11-4 0 2 2 0 014 0zM14 15a4 4 0 00-8 0v3h8v-3zM6 8a2 2 0 11-4 0 2 2 0 014 0zM16 18v-3a5.972 5.972 0 00-.75-2.906A3.005 3.005 0 0119 15v3h-3zM4.75 12.094A5.973 5.973 0 004 15v3H1v-3a3 3 0 013.75-2.906z"/></svg>
+        <span>Groups</span>
+        <div class="nav-glow"></div>
+      </a>
+    </nav>
+
+    <div class="sidebar-launch">
+      <button class="launch-btn" id="launchBtn">
+        <span class="launch-pulse"></span>
+        <svg viewBox="0 0 20 20" fill="currentColor" width="13"><path d="M6.3 4.5L16.7 10 6.3 15.5V4.5z"/></svg>
+        Launch Roblox
+      </button>
+      <button class="logout-btn" id="logoutBtn">Sign out</button>
+    </div>
+  </aside>
+
+  <main class="content">
+
+    <header class="topbar">
+      <div class="page-title-area">
+        <h2 class="page-title" id="pageTitle">Home</h2>
+        <div class="title-underline"></div>
+      </div>
+      <div class="search-bar">
+        <svg viewBox="0 0 20 20" fill="currentColor" width="14"><path fill-rule="evenodd" d="M8 4a4 4 0 100 8 4 4 0 000-8zM2 8a6 6 0 1110.89 3.476l4.817 4.817a1 1 0 01-1.414 1.414l-4.816-4.816A6 6 0 012 8z" clip-rule="evenodd"/></svg>
+        <input type="text" placeholder="Search games...">
+        <kbd>⌘K</kbd>
+      </div>
+    </header>
+
+    <div class="scroll-area">
+
+      <!-- HOME -->
+      <div class="page active" id="page-home">
+        <div class="home-profile-row">
+          <div class="hp-avatar">--</div>
+          <div class="hp-info">
+            <span class="hp-name">Loading...</span>
+            <span class="hp-handle">@...</span>
+          </div>
+        </div>
+
+        <section class="section">
+          <div class="section-header">
+            <h3 class="section-title">Connections <span class="section-count">(0)</span></h3>
+            <a href="#" class="see-all">See All</a>
+          </div>
+          <div class="connections-row">
+            <div class="conn-skeleton"></div>
+            <div class="conn-skeleton"></div>
+            <div class="conn-skeleton"></div>
+            <div class="conn-skeleton"></div>
+            <div class="conn-skeleton"></div>
+          </div>
+        </section>
+
+        <section class="section">
+          <div class="section-header">
+            <h3 class="section-title">Continue</h3>
+            <a href="#" class="see-all">See All</a>
+          </div>
+          <div class="games-row continue-row">
+            <div class="game-skeleton"></div>
+            <div class="game-skeleton"></div>
+            <div class="game-skeleton"></div>
+            <div class="game-skeleton"></div>
+          </div>
+        </section>
+
+        <section class="section">
+          <div class="section-header">
+            <h3 class="section-title">Favorites</h3>
+            <a href="#" class="see-all">See All</a>
+          </div>
+          <div class="games-row favorites-row">
+            <div class="game-skeleton"></div>
+            <div class="game-skeleton"></div>
+            <div class="game-skeleton"></div>
+            <div class="game-skeleton"></div>
+          </div>
+        </section>
+
+        <section class="section">
+          <div class="section-header">
+            <h3 class="section-title">Recommended For You</h3>
+            <a href="#" class="see-all">See All</a>
+          </div>
+          <div class="games-row recommended-row">
+            <div class="game-skeleton"></div>
+            <div class="game-skeleton"></div>
+            <div class="game-skeleton"></div>
+            <div class="game-skeleton"></div>
+          </div>
+        </section>
+      </div>
+
+      <!-- GAMES -->
+      <div class="page" id="page-games">
+        <div class="games-page-header">
+          <div class="genre-filters">
+            <button class="genre-btn active" data-genre="all">All</button>
+            <button class="genre-btn" data-genre="rpg">RPG</button>
+            <button class="genre-btn" data-genre="shooter">Shooter</button>
+            <button class="genre-btn" data-genre="roleplay">Roleplay</button>
+            <button class="genre-btn" data-genre="simulator">Simulator</button>
+            <button class="genre-btn" data-genre="obby">Obby</button>
+            <button class="genre-btn" data-genre="tycoon">Tycoon</button>
+          </div>
+          <div class="sort-wrap">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14"><path d="M3 6h18M7 12h10M11 18h2"/></svg>
+            <select class="sort-select">
+              <option>Most Popular</option>
+              <option>Highest Rated</option>
+            </select>
+          </div>
+        </div>
+        <div class="games-full-grid">
+          <div class="game-skeleton tall"></div>
+          <div class="game-skeleton tall"></div>
+          <div class="game-skeleton tall"></div>
+          <div class="game-skeleton tall"></div>
+          <div class="game-skeleton tall"></div>
+          <div class="game-skeleton tall"></div>
+        </div>
+        <div class="load-more-wrap">
+          <button class="btn-secondary" id="loadMoreGamesBtn" style="display:none">Load More</button>
+        </div>
+      </div>
+
+      <!-- FRIENDS -->
+      <div class="page" id="page-friends">
+        <div class="friends-page">
+          <div class="friends-header-row">
+            <div class="friends-stats">
+              <div class="fstat"><span class="fstat-num online-count">0</span><span class="fstat-lbl">Online</span></div>
+              <div class="fstat"><span class="fstat-num total-count">0</span><span class="fstat-lbl">Friends</span></div>
+            </div>
+            <button class="btn-primary small">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" width="12"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+              Add Friend
+            </button>
+          </div>
+          <div class="friends-section-label">ONLINE NOW</div>
+          <div class="friends-full-list friends-online-list">
+            <p class="no-friends">Loading friends...</p>
+          </div>
+          <div class="friends-section-label" style="margin-top:24px">OFFLINE</div>
+          <div class="friends-full-list friends-offline-list"></div>
+        </div>
+      </div>
+
+      <!-- SETTINGS -->
+      <div class="page" id="page-settings">
+        <div class="settings-layout">
+          <div class="settings-nav">
+            <button class="sn-item active" data-stab="general">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>
+              General
+            </button>
+            <button class="sn-item" data-stab="display">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
+              Display
+            </button>
+            <button class="sn-item" data-stab="audio">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.54 8.46a5 5 0 010 7.07"/></svg>
+              Audio
+            </button>
+            <button class="sn-item" data-stab="keybinds">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14"><rect x="2" y="7" width="20" height="14" rx="2"/></svg>
+              Keybinds
+            </button>
+          </div>
+          <div class="settings-content">
+            <div class="stab active" id="stab-general">
+              <div class="settings-group">
+                <h4 class="sg-title">Launch Behavior</h4>
+                <div class="setting-row">
+                  <div class="sr-info"><span class="sr-label">Launch on system startup</span><span class="sr-desc">Open RoBoot when Windows starts</span></div>
+                  <label class="toggle"><input type="checkbox"><span class="toggle-track"><span class="toggle-thumb"></span></span></label>
+                </div>
+                <div class="setting-row">
+                  <div class="sr-info"><span class="sr-label">Minimize to tray on close</span><span class="sr-desc">Keep running in the background</span></div>
+                  <label class="toggle"><input type="checkbox" checked><span class="toggle-track"><span class="toggle-thumb"></span></span></label>
+                </div>
+                <div class="setting-row">
+                  <div class="sr-info"><span class="sr-label">Close after game starts</span><span class="sr-desc">Hide RoBoot when joining a game</span></div>
+                  <label class="toggle"><input type="checkbox" checked><span class="toggle-track"><span class="toggle-thumb"></span></span></label>
+                </div>
+              </div>
+              <div class="settings-group">
+                <h4 class="sg-title">Performance</h4>
+                <div class="setting-row">
+                  <div class="sr-info"><span class="sr-label">Hardware acceleration</span><span class="sr-desc">Use GPU for smoother animations</span></div>
+                  <label class="toggle"><input type="checkbox" checked><span class="toggle-track"><span class="toggle-thumb"></span></span></label>
+                </div>
+                <div class="setting-row">
+                  <div class="sr-info"><span class="sr-label">Reduce animations</span><span class="sr-desc">Disable particles and transitions</span></div>
+                  <label class="toggle"><input type="checkbox"><span class="toggle-track"><span class="toggle-thumb"></span></span></label>
+                </div>
+              </div>
+            </div>
+            <div class="stab" id="stab-display">
+              <div class="settings-group">
+                <h4 class="sg-title">Theme</h4>
+                <div class="theme-selector">
+                  <div class="theme-opt active" data-theme="cyber"><div class="theme-preview" style="background:linear-gradient(135deg,#1a1a1a,#0d1f2d);border:2px solid #00b4ff"></div><span>Cyber</span></div>
+                  <div class="theme-opt" data-theme="volcanic"><div class="theme-preview" style="background:linear-gradient(135deg,#1a1212,#221818);border:2px solid #ff4444"></div><span>Volcanic</span></div>
+                  <div class="theme-opt" data-theme="aurora"><div class="theme-preview" style="background:linear-gradient(135deg,#121a14,#182218);border:2px solid #00c97a"></div><span>Aurora</span></div>
+                  <div class="theme-opt" data-theme="midnight"><div class="theme-preview" style="background:linear-gradient(135deg,#13121a,#1a1825);border:2px solid #a855f7"></div><span>Midnight</span></div>
+                </div>
+              </div>
+              <div class="settings-group">
+                <h4 class="sg-title">Custom Themes</h4>
+                <p class="sg-desc">Upload a .css file to fully restyle RoBoot — layout, colors, icons, fonts, anything CSS can touch.</p>
+                <div class="custom-theme-actions">
+                  <button class="ct-upload-btn" id="ctUploadBtn">Upload theme (.css)</button>
+                  <button class="ct-reset-btn" id="ctResetBtn">Reset to default</button>
+                </div>
+                <div class="custom-theme-list" id="customThemeList">
+                  <!-- populated by app.js -->
+                </div>
+              </div>
+              <div class="settings-group">
+                <h4 class="sg-title">Window</h4>
+                <div class="setting-row">
+                  <div class="sr-info"><span class="sr-label">Window scale</span></div>
+                  <div class="slider-wrap"><input type="range" class="settings-slider" min="80" max="120" value="100"><span class="slider-val">100%</span></div>
+                </div>
+              </div>
+            </div>
+            <div class="stab" id="stab-audio">
+              <div class="settings-group">
+                <h4 class="sg-title">Volume</h4>
+                <div class="setting-row">
+                  <div class="sr-info"><span class="sr-label">Master Volume</span></div>
+                  <div class="slider-wrap"><input type="range" class="settings-slider" min="0" max="100" value="80"><span class="slider-val">80%</span></div>
+                </div>
+                <div class="setting-row">
+                  <div class="sr-info"><span class="sr-label">UI Sounds</span></div>
+                  <div class="slider-wrap"><input type="range" class="settings-slider" min="0" max="100" value="60"><span class="slider-val">60%</span></div>
+                </div>
+              </div>
+            </div>
+            <div class="stab" id="stab-keybinds">
+              <div class="settings-group">
+                <h4 class="sg-title">Keyboard Shortcuts</h4>
+                <div class="keybind-list">
+                  <div class="keybind-row"><span class="kb-action">Open Search</span><kbd class="kb-key">⌘ K</kbd></div>
+                  <div class="keybind-row"><span class="kb-action">Launch Roblox</span><kbd class="kb-key">⌘ L</kbd></div>
+                  <div class="keybind-row"><span class="kb-action">Home</span><kbd class="kb-key">⌘ 1</kbd></div>
+                  <div class="keybind-row"><span class="kb-action">Games</span><kbd class="kb-key">⌘ 2</kbd></div>
+                  <div class="keybind-row"><span class="kb-action">Friends</span><kbd class="kb-key">⌘ 3</kbd></div>
+                  <div class="keybind-row"><span class="kb-action">Settings</span><kbd class="kb-key">⌘ 4</kbd></div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </main>
+</div>
+
+<!-- ===== GAME DETAIL OVERLAY ===== -->
+<div class="game-detail-overlay" id="gameDetailOverlay">
+  <div class="gd-backdrop" id="gdBackdrop"></div>
+  <div class="game-detail-panel" id="gameDetailPanel">
+
+    <!-- Hero banner (full-width blurred art + gradient) -->
+    <div class="gd-hero" id="gdHero">
+      <div class="gd-hero-art" id="gdHeroArt"></div>
+      <div class="gd-hero-gradient"></div>
+      <button class="gd-close" id="gdClose">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" width="14"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+      </button>
+    </div>
+
+    <!-- Identity row: thumbnail + title/creator/badges -->
+    <div class="gd-identity">
+      <div class="gd-thumbnail" id="gdThumbnail"></div>
+      <div class="gd-identity-info">
+        <h1 class="gd-title" id="gdTitle">Loading...</h1>
+        <div class="gd-creator" id="gdCreator"></div>
+        <div class="gd-badges" id="gdBadges"></div>
+      </div>
+    </div>
+
+    <!-- Action bar -->
+    <div class="gd-actions">
+      <button class="gd-play-btn" id="gdPlayBtn">
+        <svg viewBox="0 0 20 20" fill="currentColor" width="15"><path d="M6.3 4.5L16.7 10 6.3 15.5V4.5z"/></svg>
+        Play
+      </button>
+      <div class="gd-stats-row" id="gdStatsRow"></div>
+    </div>
+
+    <!-- Screenshots -->
+    <div class="gd-screenshots-wrap" id="gdScreenshotsWrap" style="display:none">
+      <div class="gd-section-label">SCREENSHOTS</div>
+      <div class="gd-screenshots" id="gdScreenshots"></div>
+    </div>
+
+    <!-- Description -->
+    <div class="gd-section-label">ABOUT</div>
+    <div class="gd-description" id="gdDescription"></div>
+
+    <!-- Details grid -->
+    <div class="gd-section-label" style="margin-top:16px">DETAILS</div>
+    <div class="gd-details-grid" id="gdDetailsGrid"></div>
+
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+<script src="app.js"></script>
+</body>
+</html>
