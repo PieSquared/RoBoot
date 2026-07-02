@@ -234,6 +234,7 @@ function renderFriends(friends) {
       <span class="conn-name">${displayName}</span>
     `
     connRow.appendChild(div)
+    div.addEventListener('click', () => openUserProfile(f.id, f))
   })
 
   // Friends page - online
@@ -285,6 +286,17 @@ function createFriendCard(friend) {
       ${friend.isOnline && friend.gameId ? `<button class="btn-primary small join-btn" data-place-id="${friend.gameId}">Join</button>` : ''}
     </div>
   `
+
+  const profileBtn = card.querySelector('.btn-ghost')
+  profileBtn?.addEventListener('click', async (e) => {
+    e.stopPropagation()
+    openUserProfile(friend.id)
+  })
+
+  card.addEventListener('click', e => {
+    if (e.target.closest('.join-btn') || e.target.closest('.btn-ghost')) return
+    openUserProfile(friend.id)
+  })
 
   // Join game button
   card.querySelector('.join-btn')?.addEventListener('click', async () => {
@@ -404,11 +416,308 @@ document.getElementById('gdBackdrop')?.addEventListener('click', closeGameDetail
 document.getElementById('gdClose')?.addEventListener('click', closeGameDetail)
 
 document.addEventListener('keydown', e => {
-  if (e.key === 'Escape') closeGameDetail()
+  if (e.key === 'Escape') {
+    closeGameDetail()
+    closeUserProfile()
+  }
 })
 
 function closeGameDetail() {
   gameDetailOverlay?.classList.remove('open')
+}
+
+const profileOverlay = document.getElementById('profileOverlay')
+const profilePanel   = document.getElementById('profilePanel')
+let currentViewedProfile = null
+let lastVisitedPage = 'home'
+
+const profileFullBtn = document.getElementById('profileFullBtn')
+const profileBackBtn = document.getElementById('profileBackBtn')
+const profileFriendsSeeAllBtn = document.getElementById('profileFriendsSeeAllBtn')
+const profileFriendsAllBackBtn = document.getElementById('profileFriendsAllBackBtn')
+const profileFriendsAllTitle = document.getElementById('profileFriendsAllTitle')
+const profileFriendsAllHandle = document.getElementById('profileFriendsAllHandle')
+
+const profileFriendsPage = document.getElementById('page-profile-friends')
+
+const profilePage = document.getElementById('page-profile')
+
+
+document.getElementById('profileBackdrop')?.addEventListener('click', closeUserProfile)
+document.getElementById('profileClose')?.addEventListener('click', closeUserProfile)
+profileFullBtn?.addEventListener('click', () => { if (currentViewedProfile) openFullProfile(currentViewedProfile.id) })
+profileBackBtn?.addEventListener('click', returnToPreviousPage)
+profileFriendsSeeAllBtn?.addEventListener('click', () => showProfileFriendsAll(currentViewedProfile))
+profileFriendsAllBackBtn?.addEventListener('click', () => setActivePage('profile'))
+
+async function openUserProfile(userId) {
+  if (!profileOverlay || !profilePanel) {
+    console.error('[profile] overlay element not found')
+    return
+  }
+
+  profileOverlay.classList.add('open')
+  profilePanel.classList.add('loading')
+
+  const user = await ipcRenderer.invoke('roblox:getUserProfile', userId)
+  profilePanel.classList.remove('loading')
+
+  if (!user || user.error) {
+    showToast('Failed to load profile')
+    closeUserProfile()
+    return
+  }
+
+  const avatar = document.getElementById('profileAvatar')
+  const nameEl = document.getElementById('profileName')
+  const handleEl = document.getElementById('profileHandle')
+  const statusEl = document.getElementById('profileStatus')
+  const infoEl = document.getElementById('profileInfo')
+  const bioEl = document.getElementById('profileBio')
+  const gamesBtn = document.getElementById('profileJoinBtn')
+
+  if (avatar) {
+    if (user.avatarUrl) {
+      avatar.style.background = `url(${user.avatarUrl}) center/cover`
+      avatar.textContent = ''
+    } else {
+      avatar.style.background = 'var(--bg3)'
+      avatar.textContent = (user.username || 'U').slice(0, 2).toUpperCase()
+    }
+  }
+
+  if (nameEl) nameEl.textContent = user.displayName || user.username || 'Unknown'
+  if (handleEl) handleEl.textContent = `@${user.username || 'unknown'}`
+
+  const statusText = user.presenceType === 2
+    ? `Playing ${user.gameName || 'a game'}`
+    : user.presenceType === 1
+    ? 'Online'
+    : 'Offline'
+  if (statusEl) statusEl.textContent = statusText
+
+  if (infoEl) {
+    infoEl.innerHTML = `
+      <div class="profile-stat">
+        <span class="ps-label">User ID</span>
+        <span class="ps-value">${user.id}</span>
+      </div>
+      <div class="profile-stat">
+        <span class="ps-label">Created</span>
+        <span class="ps-value">${formatDate(user.created)}</span>
+      </div>
+      <div class="profile-stat">
+        <span class="ps-label">Status</span>
+        <span class="ps-value">${statusText}</span>
+      </div>
+    `
+  }
+
+  if (bioEl) {
+    bioEl.textContent = user.description || 'No bio available.'
+  }
+
+  if (gamesBtn) {
+    if (user.presenceType === 2 && user.rootPlaceId) {
+      gamesBtn.style.display = ''
+      gamesBtn.onclick = async () => {
+        showToast(`▶ Joining ${user.displayName || user.username}'s game...`)
+        await ipcRenderer.invoke('roblox:launchGame', user.rootPlaceId)
+      }
+    } else {
+      gamesBtn.style.display = 'none'
+    }
+  }
+
+  currentViewedProfile = user
+  if (profileFullBtn) profileFullBtn.disabled = false
+}
+
+function setActivePage(pageId) {
+  pages.forEach(p => p.classList.remove('active'))
+  document.getElementById('page-' + pageId)?.classList.add('active')
+  if (pageTitle) pageTitle.textContent = PAGE_TITLES[pageId] || (pageId === 'profile' ? 'Profile' : pageId)
+}
+
+async function openFullProfile(userId) {
+  lastVisitedPage = document.querySelector('.page.active')?.id?.replace('page-', '') || 'home'
+  closeUserProfile()
+  setActivePage('profile')
+  prepareProfilePageSkeleton()
+  const loaded = await loadProfilePage(userId)
+  if (!loaded) {
+    returnToPreviousPage()
+  }
+}
+
+function prepareProfilePageSkeleton() {
+  const titleHeading = document.getElementById('profilePageTitle')
+  const handleTop = document.getElementById('profilePageHandleTop')
+  const handleMain = document.getElementById('profilePageHandle')
+  const statusEl = document.getElementById('profilePageStatus')
+  const statsEl = document.getElementById('profilePageStats')
+  const bioEl = document.getElementById('profilePageBio')
+  const favoritesGrid = document.querySelector('.profile-favorites-grid')
+  const followersCount = document.getElementById('profileFollowersCount')
+  const avatar = document.getElementById('profilePageAvatar')
+
+  if (titleHeading) titleHeading.textContent = 'Loading profile...'
+  if (handleTop) handleTop.textContent = ''
+  if (handleMain) handleMain.textContent = ''
+  if (statusEl) statusEl.textContent = 'Loading...'
+  if (statsEl) statsEl.innerHTML = '<div class="profile-stat loading">Loading...</div>'
+  if (bioEl) bioEl.textContent = 'Loading profile details...'
+  if (followersCount) followersCount.textContent = 'Loading followers...'
+  if (avatar) {
+    avatar.style.background = 'var(--bg3)'
+    avatar.textContent = '--'
+  }
+  if (favoritesGrid) favoritesGrid.innerHTML = '<p class="no-friends">Loading favorites...</p>'
+}
+
+async function loadProfilePage(userId) {
+  const profile = await ipcRenderer.invoke('roblox:getFullUserProfile', userId)
+  console.log('[profilePage] loadProfilePage', userId, profile)
+  if (!profile || profile.error) {
+    showToast('Failed to load full profile')
+    return false
+  }
+
+  console.log('[profilePage] profile summary', {
+    friendsCount: profile.friendsCount,
+    followersCount: profile.followersCount,
+    favoritesCount: profile.favoritesCount,
+    favoritesType: Array.isArray(profile.favorites) ? 'array' : typeof profile.favorites,
+    favoritesLength: Array.isArray(profile.favorites) ? profile.favorites.length : null,
+    friendsLength: Array.isArray(profile.friends) ? profile.friends.length : null,
+    friendAvatars: Array.isArray(profile.friends) ? profile.friends.map(f => ({ id: f.id, hasAvatar: !!f.avatarUrl })) : null,
+  })
+
+  const avatar = document.getElementById('profilePageAvatar')
+  const nameEl = document.getElementById('profilePageName')
+  const handleTop = document.getElementById('profilePageHandleTop')
+  const handleMain = document.getElementById('profilePageHandle')
+  const statusEl = document.getElementById('profilePageStatus')
+  const statsEl = document.getElementById('profilePageStats')
+  const bioEl = document.getElementById('profilePageBio')
+  const favoritesGrid = document.querySelector('.profile-favorites-grid')
+  const followersCount = document.getElementById('profileFollowersCount')
+
+  currentViewedProfile = profile
+
+  const pageTitleText = profile.displayName || profile.username || 'Profile'
+
+  if (avatar) {
+    if (profile.avatarUrl) {
+      avatar.style.background = `url(${profile.avatarUrl}) center/cover`
+      avatar.textContent = ''
+    } else {
+      avatar.style.background = 'var(--bg3)'
+      avatar.textContent = (profile.username || 'U').slice(0, 2).toUpperCase()
+    }
+  }
+  if (nameEl) nameEl.textContent = pageTitleText
+  if (handleTop) handleTop.textContent = `@${profile.username || 'unknown'}`
+  if (handleMain) handleMain.textContent = `@${profile.username || 'unknown'}`
+  const titleHeading = document.getElementById('profilePageTitle')
+  if (titleHeading) titleHeading.textContent = pageTitleText
+
+  const statusText = profile.presenceType === 2
+    ? `Playing ${profile.gameName || 'a game'}`
+    : profile.presenceType === 1
+    ? 'Online'
+    : 'Offline'
+  if (statusEl) statusEl.textContent = statusText
+
+  if (statsEl) {
+    statsEl.innerHTML = `
+      <div class="profile-stat">
+        <span class="ps-label">Friends</span>
+        <span class="ps-value">${profile.friendsCount != null ? profile.friendsCount : (Array.isArray(profile.friends) ? profile.friends.length : '0')}</span>
+      </div>
+      <div class="profile-stat">
+        <span class="ps-label">Followers</span>
+        <span class="ps-value">${profile.followersCount != null ? profile.followersCount : 'Unavailable'}</span>
+      </div>
+    `
+  }
+
+  if (bioEl) bioEl.textContent = profile.description || 'No bio available.'
+
+  if (followersCount) followersCount.textContent = profile.followersCount != null
+    ? `${profile.followersCount} followers`
+    : 'Followers unavailable'
+
+  if (favoritesGrid) {
+    console.log('[profilePage] favorites payload=%o', profile.favorites)
+    if (Array.isArray(profile.favorites) && profile.favorites.length) {
+      renderGameRow('.profile-favorites-grid', profile.favorites)
+    } else {
+      favoritesGrid.innerHTML = '<p class="no-friends">No favorites to show.</p>'
+    }
+  }
+
+  renderProfileFriendPreview(profile)
+  renderProfileFriendsAll(profile)
+  return true
+}
+
+function renderProfileFriendPreview(profile) {
+  const previewRow = document.querySelector('.profile-friend-preview-row')
+  if (!previewRow) return
+  previewRow.innerHTML = ''
+
+  const friends = Array.isArray(profile.friends) ? profile.friends.slice(0, 10) : []
+  if (!friends.length) {
+    previewRow.innerHTML = '<p class="no-friends">No friends to show.</p>'
+    return
+  }
+
+  friends.forEach(friend => {
+    const initials = (friend.displayName || friend.username || 'U').slice(0, 2).toUpperCase()
+    const avatarStyle = friend.avatarUrl
+      ? `background:url(${friend.avatarUrl}) center/cover no-repeat;`
+      : 'background:var(--bg3);'
+    const card = document.createElement('div')
+    card.className = 'conn-avatar'
+    card.innerHTML = `
+      <div class="conn-pic" style="${avatarStyle}">${friend.avatarUrl ? '' : initials}</div>
+    `
+    card.addEventListener('click', () => openFullProfile(friend.id))
+    previewRow.appendChild(card)
+  })
+}
+
+function renderProfileFriendsAll(profile) {
+  const list = document.querySelector('.profile-friends-full-list')
+  if (!list) return
+  list.innerHTML = ''
+
+  const friends = Array.isArray(profile.friends) ? profile.friends : []
+  if (!friends.length) {
+    list.innerHTML = '<p class="no-friends">No friends to show.</p>'
+    return
+  }
+
+  friends.forEach(friend => {
+    list.appendChild(createFriendCard(friend))
+  })
+}
+
+function showProfileFriendsAll(profile) {
+  if (!profile) return
+  if (profileFriendsAllTitle) profileFriendsAllTitle.textContent = `${profile.displayName || profile.username || 'User'}'s Friends`
+  if (profileFriendsAllHandle) profileFriendsAllHandle.textContent = `@${profile.username || 'unknown'}`
+  renderProfileFriendsAll(profile)
+  setActivePage('profile-friends')
+}
+
+function returnToPreviousPage() {
+  setActivePage(lastVisitedPage || 'friends')
+}
+
+function closeUserProfile() {
+  profileOverlay?.classList.remove('open')
 }
 
 async function openGameDetail(universeId) {
@@ -553,7 +862,7 @@ const pages = document.querySelectorAll('.page')
 const pageTitle = document.getElementById('pageTitle')
 const titleUnderline = document.querySelector('.title-underline')
 
-const PAGE_TITLES = { home: 'Home', games: 'Games', friends: 'Friends', settings: 'Settings' }
+const PAGE_TITLES = { home: 'Home', games: 'Games', friends: 'Friends', profile: 'Profile', settings: 'Settings' }
 
 navItems.forEach(item => {
   item.addEventListener('click', e => {

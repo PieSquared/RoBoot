@@ -293,6 +293,80 @@
         </div>
       </div>
 
+      <!-- PROFILE PAGE -->
+      <div class="page" id="page-profile">
+        <div class="profile-page">
+          <div class="profile-page-header">
+            <button class="btn-ghost small" id="profileBackBtn">Back</button>
+            <div>
+              <h2 class="page-title" id="profilePageTitle">Profile</h2>
+              <span class="profile-page-handle" id="profilePageHandle">@username</span>
+            </div>
+          </div>
+
+          <div class="profile-page-content">
+            <div class="profile-overview-card">
+              <div class="profile-display">
+                <div class="profile-avatar" id="profilePageAvatar">--</div>
+                <div>
+                  <span class="profile-name" id="profilePageName">Loading...</span>
+                  <span class="profile-id" id="profilePageHandleTop">@username</span>
+                </div>
+              </div>
+              <div class="profile-status" id="profilePageStatus">Status</div>
+              <div class="profile-page-stats" id="profilePageStats"></div>
+              <div class="profile-section-label">About</div>
+              <div class="profile-bio" id="profilePageBio">Loading profile details...</div>
+            </div>
+
+            <section class="section">
+              <div class="section-header">
+                <h3 class="section-title">Friends</h3>
+                <button class="btn-ghost small" id="profileFriendsSeeAllBtn">See all</button>
+              </div>
+              <div class="connections-row profile-friend-preview-row">
+                <div class="conn-skeleton"></div>
+                <div class="conn-skeleton"></div>
+                <div class="conn-skeleton"></div>
+                <div class="conn-skeleton"></div>
+                <div class="conn-skeleton"></div>
+              </div>
+            </section>
+
+            <section class="section">
+              <div class="section-header">
+                <h3 class="section-title">Favorites</h3>
+              </div>
+              <div class="games-row profile-favorites-grid"></div>
+            </section>
+
+            <section class="section">
+              <div class="section-header">
+                <h3 class="section-title">Followers</h3>
+              </div>
+              <div class="profile-followers-count" id="profileFollowersCount">0 followers</div>
+            </section>
+          </div>
+        </div>
+      </div>
+
+      <div class="page" id="page-profile-friends">
+        <div class="profile-page">
+          <div class="profile-page-header">
+            <button class="btn-ghost small" id="profileFriendsAllBackBtn">Back</button>
+            <div>
+              <h2 class="page-title" id="profileFriendsAllTitle">Friends</h2>
+              <span class="profile-page-handle" id="profileFriendsAllHandle">@profile</span>
+            </div>
+          </div>
+          <div class="profile-page-content">
+            <section class="section">
+              <div class="friends-full-list profile-friends-full-list"></div>
+            </section>
+          </div>
+        </div>
+      </div>
+
       <!-- SETTINGS -->
       <div class="page" id="page-settings">
         <div class="settings-layout">
@@ -453,6 +527,31 @@
     <div class="gd-section-label" style="margin-top:16px">DETAILS</div>
     <div class="gd-details-grid" id="gdDetailsGrid"></div>
 
+  </div>
+</div>
+
+<!-- ===== PROFILE DETAIL OVERLAY ===== -->
+<div class="profile-detail-overlay" id="profileOverlay">
+  <div class="profile-backdrop" id="profileBackdrop"></div>
+  <div class="profile-panel" id="profilePanel">
+    <button class="profile-close" id="profileClose" aria-label="Close profile">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" width="14"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+    </button>
+    <div class="profile-display">
+      <div class="profile-avatar" id="profileAvatar">--</div>
+      <div>
+        <span class="profile-name" id="profileName">Loading...</span>
+        <span class="profile-id" id="profileHandle">@username</span>
+      </div>
+    </div>
+    <div class="profile-status" id="profileStatus">Status</div>
+    <div class="profile-info" id="profileInfo"></div>
+    <div class="profile-section-label">About</div>
+    <div class="profile-bio" id="profileBio">Loading profile details...</div>
+    <div class="profile-actions">
+      <button class="btn-primary" id="profileJoinBtn">Join Game</button>
+      <button class="btn-secondary" id="profileFullBtn">View Full Profile</button>
+    </div>
   </div>
 </div>
 

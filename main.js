@@ -442,6 +442,295 @@ ipcMain.handle('roblox:getFriends', async () => {
   }
 })
 
+ipcMain.handle('roblox:getUserProfile', async (_, userId) => {
+  try {
+    if (!userId) throw new Error('Missing userId')
+
+    const [profileRes, avatarRes, friendsRes] = await Promise.all([
+      fetch(`https://users.roblox.com/v1/users/${userId}`),
+      fetch(`https://thumbnails.roblox.com/v1/users/avatar-headshot?userIds=${userId}&size=150x150&format=Png`),
+      fetch(`https://friends.roblox.com/v1/users/${userId}/friends/count`),
+    ])
+
+    if (!profileRes.ok) throw new Error('Failed to load profile')
+
+    const profile = await profileRes.json()
+    const avatar  = avatarRes && avatarRes.ok ? await avatarRes.json() : { data: [] }
+    const friends = friendsRes.ok ? await friendsRes.json() : null
+
+    const cookie = await getRobloxCookie()
+    const cookieHeader = cookie ? { Cookie: `.ROBLOSECURITY=${cookie}` } : {}
+    const presenceRes = await fetch('https://presence.roblox.com/v1/presence/users', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...cookieHeader },
+      body: JSON.stringify({ userIds: [userId] }),
+    })
+    const presenceData = presenceRes.ok ? await presenceRes.json() : null
+    const presence = presenceData?.userPresences?.[0] || {}
+
+    return {
+      id:           userId,
+      username:     profile.name,
+      displayName:  profile.displayName,
+      avatarUrl:    avatar.data?.[0]?.imageUrl || `https://www.roblox.com/headshot-thumbnail/image?userId=${userId}&width=150&height=150&format=png`,
+      description:  profile.description || profile.bio || '',
+      created:      profile.created,
+      isOnline:     (presence.userPresenceType ?? 0) !== 0,
+      presenceType: presence.userPresenceType ?? 0,
+      gameName:     presence.lastLocation || null,
+      rootPlaceId:  presence.rootPlaceId || null,
+      friendsCount: friends?.count ?? null,
+    }
+  } catch (e) {
+    return { error: e.message }
+  }
+})
+
+ipcMain.handle('roblox:getFullUserProfile', async (_, userId) => {
+  try {
+    if (!userId) throw new Error('Missing userId')
+
+    const cookie = await getRobloxCookie()
+    const cookieHeader = cookie ? { Cookie: `.ROBLOSECURITY=${cookie}` } : {}
+    const token = await getValidAccessToken().catch(() => null)
+    const authHeader = token ? { Authorization: `Bearer ${token}` } : {}
+    const commonHeaders = { ...cookieHeader, ...authHeader }
+
+    const [profileRes, avatarRes, favsRes, friendsRes, followersRes, presenceRes] = await Promise.allSettled([
+      fetch(`https://users.roblox.com/v1/users/${userId}`),
+      fetch(`https://thumbnails.roblox.com/v1/users/avatar-headshot?userIds=${userId}&size=150x150&format=Png`, { headers: commonHeaders }),
+      fetch(`https://games.roblox.com/v2/users/${userId}/favorite/games?accessFilter=2&limit=10&sortOrder=Desc`, { headers: commonHeaders }),
+      fetch(`https://friends.roblox.com/v1/users/${userId}/friends?userSort=Alphabetical&limit=12`, { headers: commonHeaders }),
+      fetch(`https://friends.roblox.com/v1/users/${userId}/followers/count`, { headers: commonHeaders }),
+      fetch('https://presence.roblox.com/v1/presence/users', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...commonHeaders },
+        body: JSON.stringify({ userIds: [userId] }),
+      }),
+    ])
+
+    const ok = res => res?.status === 'fulfilled' && res.value?.ok
+    console.log('[roblox:getFullUserProfile] userId=%s profileOk=%s avatarOk=%s favsOk=%s friendsOk=%s followersOk=%s presenceOk=%s',
+      userId,
+      ok(profileRes),
+      ok(avatarRes),
+      ok(favsRes),
+      ok(friendsRes),
+      ok(followersRes),
+      ok(presenceRes)
+    )
+
+    if (!ok(profileRes)) {
+      throw new Error('Failed to load profile')
+    }
+
+    const profile = await profileRes.value.json()
+    const avatar = ok(avatarRes) ? await avatarRes.value.json() : { data: [] }
+    const favoritesData = ok(favsRes) ? await favsRes.value.json() : null
+    const friendsData = ok(friendsRes) ? await friendsRes.value.json() : null
+    const followersData = ok(followersRes) ? await followersRes.value.json() : null
+    const presenceData = ok(presenceRes) ? await presenceRes.value.json() : null
+
+    console.log('[roblox:getFullUserProfile] favoritesData=%o', favoritesData)
+    console.log('[roblox:getFullUserProfile] friendsData=%o', friendsData)
+    console.log('[roblox:getFullUserProfile] followersData=%o', followersData)
+
+    let favoritesIds = Array.isArray(favoritesData?.data)
+      ? favoritesData.data.map(g => g.universeId || g.id || g.gameId || g.rootPlaceId || g.rootPlace || g.placeId || null).filter(Boolean)
+      : []
+
+    if (!favoritesIds.length) {
+      const fallbackUrls = [
+        `https://games.roblox.com/v2/users/${userId}/favorite/games?accessFilter=2&sortOrder=Desc&limit=10`,
+        `https://games.roblox.com/v2/users/${userId}/favorite/games?accessFilter=1&sortOrder=Desc&limit=10`,
+        `https://games.roblox.com/v2/users/${userId}/favorite/games?accessFilter=0&sortOrder=Desc&limit=10`,
+      ]
+      for (const url of fallbackUrls) {
+        try {
+          const fallbackFavs = await fetch(url, { headers: commonHeaders })
+          console.log('[roblox:getFullUserProfile] fallback favorites url=%s status=%s', url, fallbackFavs.status)
+          if (!fallbackFavs.ok) continue
+          const fallbackData = await fallbackFavs.json()
+          favoritesIds = Array.isArray(fallbackData?.data)
+            ? fallbackData.data.map(g => g.universeId || g.id || g.gameId || g.rootPlaceId || g.rootPlace || g.placeId || null).filter(Boolean)
+            : []
+          if (favoritesIds.length) break
+        } catch (e) {
+          console.warn('[roblox:getFullUserProfile] favorite fallback failed', url, e.message)
+        }
+      }
+    }
+
+    const favorites = await fetchGameDetails(favoritesIds)
+
+    const friends = Array.isArray(friendsData?.data)
+      ? friendsData.data.map(f => ({
+          id: f.id,
+          username: f.name || null,
+          displayName: f.displayName || f.name || `User${f.id}`,
+          avatarUrl: null,
+          isOnline: false,
+          presenceType: 0,
+          gameName: null,
+          gameId: null,
+        }))
+      : []
+
+    let friendsWithAvatars = friends
+    if (friends.length) {
+      try {
+        const allIds = friends.map(f => f.id)
+        const chunkSize = 100
+        const thumbMap = {}
+        const userMap = {}
+
+        const sleep = ms => new Promise(r => setTimeout(r, ms))
+        const fetchWithRetries = async (fn, retries = 3) => {
+          let attempt = 0
+          while (attempt < retries) {
+            try {
+              const res = await fn()
+              if (res && res.ok) return res
+              // if rate limited, wait and retry
+              if (res && res.status === 429) {
+                const wait = 500 * Math.pow(2, attempt)
+                await sleep(wait)
+                attempt++
+                continue
+              }
+              return res
+            } catch (e) {
+              const wait = 500 * Math.pow(2, attempt)
+              await sleep(wait)
+              attempt++
+            }
+          }
+          return null
+        }
+
+        for (let i = 0; i < allIds.length; i += chunkSize) {
+          const batch = allIds.slice(i, i + chunkSize)
+
+          const thumbUrl = `https://thumbnails.roblox.com/v1/users/avatar-headshot?userIds=${batch.join(',')}&size=150x150&format=Png`
+          const userPostUrl = `https://users.roblox.com/v1/users`
+
+          const [thumbRes, userRes] = await Promise.all([
+            fetchWithRetries(() => fetch(thumbUrl, { headers: commonHeaders })),
+            fetchWithRetries(() => fetch(userPostUrl, { method: 'POST', headers: { 'Content-Type': 'application/json', ...commonHeaders }, body: JSON.stringify({ userIds: batch }) })),
+          ])
+
+          console.log('[roblox:getFullUserProfile] batch thumb ok=%s user ok=%s thumbStatus=%s userStatus=%s batchSize=%s',
+            !!thumbRes?.ok, !!userRes?.ok, thumbRes?.status, userRes?.status, batch.length)
+
+          if (thumbRes && thumbRes.ok) {
+            const thumbData = await thumbRes.json()
+            for (const item of thumbData.data || []) {
+              if (item.targetId) thumbMap[String(item.targetId)] = item.imageUrl
+            }
+          }
+
+          let userData = null
+          if (userRes && userRes.ok) {
+            userData = await userRes.json()
+          } else {
+            // Try GET fallback for this batch
+            try {
+              const getRes = await fetch(`https://users.roblox.com/v1/users?userIds=${batch.join(',')}`, { headers: commonHeaders })
+              console.log('[roblox:getFullUserProfile] users GET fallback status=%s batchSize=%s', getRes.status, batch.length)
+              if (getRes.ok) userData = await getRes.json()
+            } catch (e) {
+              console.warn('[roblox:getFullUserProfile] users GET fallback failed:', e.message)
+            }
+          }
+
+          if (userData && userData.data) {
+            for (const u of userData.data) userMap[u.id] = u
+          }
+        }
+
+        friendsWithAvatars = friends.map(f => {
+          const u = userMap[f.id] || {}
+          return {
+            ...f,
+            username: f.username || u.name || null,
+            displayName: f.displayName || u.displayName || u.name || `User${f.id}`,
+            avatarUrl: thumbMap[String(f.id)] || `https://www.roblox.com/headshot-thumbnail/image?userId=${f.id}&width=150&height=150&format=png`,
+          }
+        })
+      } catch (e) {
+        console.warn('[roblox:getFullUserProfile] friend detail fetch failed:', e.message)
+        friendsWithAvatars = friends.map(f => ({
+          ...f,
+          avatarUrl: `https://www.roblox.com/headshot-thumbnail/image?userId=${f.id}&width=150&height=150&format=png`,
+        }))
+      }
+    }
+
+    const presence = presenceData?.userPresences?.[0] || {}
+    let followerCountValue = null
+    if (typeof followersData?.count === 'number') {
+      followerCountValue = followersData.count
+    } else if (typeof followersData?.followers === 'number') {
+      followerCountValue = followersData.followers
+    } else if (Array.isArray(followersData?.data)) {
+      followerCountValue = followersData.data.length
+    }
+
+    if (followerCountValue == null) {
+      const fallbackFollowerUrls = [
+        `https://friends.roblox.com/v1/users/${userId}/followers/count`,
+        `https://friends.roblox.com/v1/users/${userId}/followers?limit=1`,
+      ]
+      for (const url of fallbackFollowerUrls) {
+        try {
+          const fallbackFollowers = await fetch(url, { headers: commonHeaders })
+          console.log('[roblox:getFullUserProfile] fallback followers url=%s status=%s', url, fallbackFollowers.status)
+          if (!fallbackFollowers.ok) continue
+          const fallbackData = await fallbackFollowers.json()
+          followerCountValue = typeof fallbackData.count === 'number'
+            ? fallbackData.count
+            : typeof fallbackData.followers === 'number'
+            ? fallbackData.followers
+            : Array.isArray(fallbackData.data)
+            ? fallbackData.data.length
+            : followerCountValue
+          if (followerCountValue != null) break
+        } catch (e) {
+          console.warn('[roblox:getFullUserProfile] follower fallback failed:', url, e.message)
+        }
+      }
+    }
+
+    console.log('[roblox:getFullUserProfile] profile=%s favorites=%d friends=%d followers=%s',
+      profile.name,
+      favorites.length,
+      friendsWithAvatars.length,
+      followerCountValue
+    )
+
+    return {
+      id:             userId,
+      username:       profile.name,
+      displayName:    profile.displayName,
+      avatarUrl:      avatar.data?.[0]?.imageUrl || `https://www.roblox.com/headshot-thumbnail/image?userId=${userId}&width=150&height=150&format=png`,
+      description:    profile.description || profile.bio || '',
+      created:        profile.created,
+      friendsCount:   friendsData?.count ?? friendsWithAvatars.length,
+      followersCount: followerCountValue,
+      favoritesCount: favoritesData?.count ?? favorites.length,
+      favorites,
+      friends:        friendsWithAvatars,
+      isOnline:       (presence.userPresenceType ?? 0) !== 0,
+      presenceType:   presence.userPresenceType ?? 0,
+      gameName:       presence.lastLocation || null,
+      rootPlaceId:    presence.rootPlaceId || null,
+    }
+  } catch (e) {
+    console.error('[roblox:getFullUserProfile] error:', e.message)
+    return { error: e.message }
+  }
+})
+
 // ---- GAME DETAILS HELPER -----------------------------------
 async function fetchGameDetails(universeIds) {
   if (!universeIds || !universeIds.length) return []
