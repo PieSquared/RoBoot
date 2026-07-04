@@ -13,6 +13,7 @@ const {
   saveTokens,
   generateCodeVerifier, generateCodeChallenge, generateState,
 } = require('./auth')
+const { normalizeFriendIdentity } = require('./libs/friend-utils')
 
 // ---- CONSTANTS ---------------------------------------------
 const CLIENT_ID     = '8472608127595747627'
@@ -426,10 +427,11 @@ ipcMain.handle('roblox:getFriends', async () => {
       const p    = presenceMap[f.id] || {}
       const u    = userMap[f.id]     || {}
       const type = p.userPresenceType ?? 0
+      const { username, displayName } = normalizeFriendIdentity(f, u)
       return {
         id:           f.id,
-        username:     u.name        || f.name        || `User${f.id}`,
-        displayName:  u.displayName || f.displayName || u.name || f.name || `User${f.id}`,
+        username,
+        displayName,
         avatarUrl:    avatarMap[f.id] || null,
         isOnline:     type !== 0,
         presenceType: type,
@@ -442,44 +444,69 @@ ipcMain.handle('roblox:getFriends', async () => {
   }
 })
 
-ipcMain.handle('roblox:getUserProfile', async (_, userId) => {
+ipcMain.handle('roblox:getUserProfile', async (_, userId, fallbackProfile = null) => {
   try {
-    if (!userId) throw new Error('Missing userId')
-
-    const [profileRes, avatarRes, friendsRes] = await Promise.all([
-      fetch(`https://users.roblox.com/v1/users/${userId}`),
-      fetch(`https://thumbnails.roblox.com/v1/users/avatar-headshot?userIds=${userId}&size=150x150&format=Png`),
-      fetch(`https://friends.roblox.com/v1/users/${userId}/friends/count`),
-    ])
-
-    if (!profileRes.ok) throw new Error('Failed to load profile')
-
-    const profile = await profileRes.json()
-    const avatar  = avatarRes && avatarRes.ok ? await avatarRes.json() : { data: [] }
-    const friends = friendsRes.ok ? await friendsRes.json() : null
+    const resolvedUserId = userId ?? fallbackProfile?.id
+    if (!resolvedUserId) return { error: 'Missing userId' }
 
     const cookie = await getRobloxCookie()
     const cookieHeader = cookie ? { Cookie: `.ROBLOSECURITY=${cookie}` } : {}
+    const token = await getValidAccessToken().catch(() => null)
+    const authHeader = token ? { Authorization: `Bearer ${token}` } : {}
+    const commonHeaders = { ...cookieHeader, ...authHeader }
+
+    let profile = null
+    let profileRes = null
+
+    try {
+      profileRes = await fetch(`https://users.roblox.com/v1/users/${resolvedUserId}`, { headers: commonHeaders })
+      if (profileRes.ok) {
+        profile = await profileRes.json()
+      }
+    } catch {}
+
+    if (!profile) {
+      try {
+        const fallbackRes = await fetch('https://users.roblox.com/v1/users', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', ...commonHeaders },
+          body: JSON.stringify({ userIds: [resolvedUserId] }),
+        })
+        if (fallbackRes.ok) {
+          const fallbackData = await fallbackRes.json()
+          profile = Array.isArray(fallbackData?.data) ? fallbackData.data.find(u => String(u.id) === String(resolvedUserId)) || fallbackData.data[0] : null
+        }
+      } catch {}
+    }
+
+    const avatarRes = await fetch(`https://thumbnails.roblox.com/v1/users/avatar-headshot?userIds=${resolvedUserId}&size=150x150&format=Png`, { headers: commonHeaders }).catch(() => null)
+    const friendsRes = await fetch(`https://friends.roblox.com/v1/users/${resolvedUserId}/friends/count`, { headers: commonHeaders }).catch(() => null)
     const presenceRes = await fetch('https://presence.roblox.com/v1/presence/users', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', ...cookieHeader },
-      body: JSON.stringify({ userIds: [userId] }),
-    })
-    const presenceData = presenceRes.ok ? await presenceRes.json() : null
+      body: JSON.stringify({ userIds: [resolvedUserId] }),
+    }).catch(() => null)
+
+    const avatar  = avatarRes?.ok ? await avatarRes.json().catch(() => ({ data: [] })) : { data: [] }
+    const friends = friendsRes?.ok ? await friendsRes.json().catch(() => null) : null
+    const presenceData = presenceRes?.ok ? await presenceRes.json().catch(() => null) : null
     const presence = presenceData?.userPresences?.[0] || {}
 
+    const fallbackName = fallbackProfile?.displayName || fallbackProfile?.username || fallbackProfile?.name || null
+    const fallbackUsername = fallbackProfile?.username || fallbackProfile?.name || null
+
     return {
-      id:           userId,
-      username:     profile.name,
-      displayName:  profile.displayName,
-      avatarUrl:    avatar.data?.[0]?.imageUrl || `https://www.roblox.com/headshot-thumbnail/image?userId=${userId}&width=150&height=150&format=png`,
-      description:  profile.description || profile.bio || '',
-      created:      profile.created,
+      id:           resolvedUserId,
+      username:     profile?.name || fallbackUsername || fallbackProfile?.userName || null,
+      displayName:  profile?.displayName || fallbackName || profile?.name || fallbackUsername || null,
+      avatarUrl:    avatar.data?.[0]?.imageUrl || fallbackProfile?.avatarUrl || `https://www.roblox.com/headshot-thumbnail/image?userId=${resolvedUserId}&width=150&height=150&format=png`,
+      description:  profile?.description || profile?.bio || fallbackProfile?.description || '',
+      created:      profile?.created || fallbackProfile?.created || null,
       isOnline:     (presence.userPresenceType ?? 0) !== 0,
       presenceType: presence.userPresenceType ?? 0,
       gameName:     presence.lastLocation || null,
       rootPlaceId:  presence.rootPlaceId || null,
-      friendsCount: friends?.count ?? null,
+      friendsCount: friends?.count ?? fallbackProfile?.friendsCount ?? null,
     }
   } catch (e) {
     return { error: e.message }
@@ -564,16 +591,19 @@ ipcMain.handle('roblox:getFullUserProfile', async (_, userId) => {
     const favorites = await fetchGameDetails(favoritesIds)
 
     const friends = Array.isArray(friendsData?.data)
-      ? friendsData.data.map(f => ({
-          id: f.id,
-          username: f.name || null,
-          displayName: f.displayName || f.name || `User${f.id}`,
-          avatarUrl: null,
-          isOnline: false,
-          presenceType: 0,
-          gameName: null,
-          gameId: null,
-        }))
+      ? friendsData.data.map(f => {
+          const { username, displayName } = normalizeFriendIdentity(f)
+          return {
+            id: f.id,
+            username,
+            displayName,
+            avatarUrl: null,
+            isOnline: false,
+            presenceType: 0,
+            gameName: null,
+            gameId: null,
+          }
+        })
       : []
 
     let friendsWithAvatars = friends
@@ -650,10 +680,11 @@ ipcMain.handle('roblox:getFullUserProfile', async (_, userId) => {
 
         friendsWithAvatars = friends.map(f => {
           const u = userMap[f.id] || {}
+          const { username, displayName } = normalizeFriendIdentity(f, u)
           return {
             ...f,
-            username: f.username || u.name || null,
-            displayName: f.displayName || u.displayName || u.name || `User${f.id}`,
+            username,
+            displayName,
             avatarUrl: thumbMap[String(f.id)] || `https://www.roblox.com/headshot-thumbnail/image?userId=${f.id}&width=150&height=150&format=png`,
           }
         })
@@ -734,26 +765,60 @@ ipcMain.handle('roblox:getFullUserProfile', async (_, userId) => {
 // ---- GAME DETAILS HELPER -----------------------------------
 async function fetchGameDetails(universeIds) {
   if (!universeIds || !universeIds.length) return []
-  const ids = universeIds.slice(0, 50).join(',')
-  const [gamesRes, thumbsRes] = await Promise.all([
-    fetch(`https://games.roblox.com/v1/games?universeIds=${ids}`),
-    fetch(`https://thumbnails.roblox.com/v1/games/icons?universeIds=${ids}&size=150x150&format=Png`)
-  ])
-  const gamesData  = await gamesRes.json()
-  const thumbsData = await thumbsRes.json()
-  const thumbMap   = {}
-  for (const t of thumbsData.data || []) thumbMap[t.targetId] = t.imageUrl
-  return (gamesData.data || []).map(g => ({
-    id:           g.id,
-    rootPlaceId:  g.rootPlaceId,
-    name:         g.name,
-    playing:      g.playing || 0,
-    visits:       g.visits  || 0,
-    rating:       (g.totalUpVotes + g.totalDownVotes) > 0
-                    ? Math.round(g.totalUpVotes / (g.totalUpVotes + g.totalDownVotes) * 100)
-                    : null,
-    thumbnailUrl: thumbMap[g.id] || null,
-  }))
+  const chunkSize = 20
+  const results = []
+  const seen = new Set()
+
+  for (let i = 0; i < universeIds.length; i += chunkSize) {
+    const ids = universeIds.slice(i, i + chunkSize).join(',')
+    const [gamesRes, thumbsRes] = await Promise.all([
+      fetchWithRetries(() => fetch(`https://games.roblox.com/v1/games?universeIds=${ids}`, { headers: DEFAULT_FETCH_HEADERS })),
+      fetchWithRetries(() => fetch(`https://thumbnails.roblox.com/v1/games/icons?universeIds=${ids}&size=150x150&format=Png`, { headers: DEFAULT_FETCH_HEADERS }))
+    ])
+
+    if (!gamesRes) {
+      console.warn('[main] fetchGameDetails skipped chunk; no gamesRes', ids)
+      continue
+    }
+    if (!gamesRes.ok) {
+      console.warn('[main] fetchGameDetails skipped chunk; bad gamesRes status', gamesRes.status, ids)
+      continue
+    }
+
+    let gamesData = null
+    try {
+      gamesData = await gamesRes.json()
+    } catch (e) {
+      console.warn('[main] fetchGameDetails gamesRes json failed', e.message, ids)
+      continue
+    }
+    if (!gamesData || !Array.isArray(gamesData.data)) {
+      console.warn('[main] fetchGameDetails missing games data', ids)
+      continue
+    }
+
+    const thumbsData = thumbsRes && thumbsRes.ok ? await thumbsRes.json().catch(() => ({ data: [] })) : { data: [] }
+    const thumbMap   = {}
+    for (const t of thumbsData.data || []) thumbMap[t.targetId] = t.imageUrl
+
+    for (const g of gamesData.data) {
+      if (!g || !g.id || seen.has(g.id)) continue
+      seen.add(g.id)
+      results.push({
+        id:           g.id,
+        rootPlaceId:  g.rootPlaceId,
+        name:         g.name,
+        playing:      g.playing || 0,
+        visits:       g.visits  || 0,
+        rating:       (g.totalUpVotes + g.totalDownVotes) > 0
+                        ? Math.round(g.totalUpVotes / (g.totalUpVotes + g.totalDownVotes) * 100)
+                        : null,
+        thumbnailUrl: thumbMap[g.id] || null,
+      })
+    }
+  }
+
+  return results
 }
 
 ipcMain.handle('roblox:getGames', async (_, universeIds) => {
@@ -773,7 +838,7 @@ ipcMain.handle('roblox:getRecentlyPlayed', async () => {
 
     if (ids.length) {
       console.log(`[getRecentlyPlayed] found ${ids.length} games via omni-recommendation`)
-      return fetchGameDetails(ids.slice(0, 8))
+      return fetchGameDetails(ids)
     }
     return fetchGameDetails(FALLBACK)
   } catch (e) {
@@ -831,7 +896,7 @@ ipcMain.handle('roblox:getRecommended', async () => {
 
     if (ids.length) {
       console.log(`[getRecommended] found ${ids.length} games via omni-recommendation`)
-      return fetchGameDetails(ids.slice(0, 8))
+      return fetchGameDetails(ids)
     }
     return fetchGameDetails(FALLBACK)
   } catch (e) {
@@ -931,10 +996,47 @@ ipcMain.handle('roblox:getGameDetail', async (_, universeId) => {
 })
 
 // ---- SEARCH / BROWSE HELPER ---------------------------------
+const DEFAULT_FETCH_HEADERS = {
+  'Accept': 'application/json, text/plain, */*',
+  'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)',
+}
+
 // games.roblox.com/v1/games/list (the old "model.keyword=" endpoint)
 // has been deprecated and no longer returns useful results. Roblox's
 // site search now runs through the omni-search endpoint, which returns
 // a list of universeIds we can then feed into fetchGameDetails().
+async function fetchWithRetries(fn, retries = 5, baseDelay = 500) {
+  let attempt = 0
+  let lastError = null
+  while (attempt < retries) {
+    try {
+      const res = await fn()
+      const status = res?.status
+      if (res && res.ok) return res
+      if (res && [429, 500, 502, 503, 504].includes(status)) {
+        const wait = baseDelay * Math.pow(2, attempt)
+        console.warn(`[main] fetchWithRetries retry ${attempt + 1}/${retries} status=${status}, waiting ${wait}ms`)
+        await new Promise(r => setTimeout(r, wait))
+        attempt++
+        continue
+      }
+      lastError = res ? new Error(`HTTP ${status}`) : new Error('No response')
+      if (res) {
+        console.warn(`[main] fetchWithRetries non-retriable status=${status}`)
+      }
+      return res
+    } catch (e) {
+      lastError = e
+      const wait = baseDelay * Math.pow(2, attempt)
+      console.warn(`[main] fetchWithRetries exception ${attempt + 1}/${retries}: ${e.message}, waiting ${wait}ms`)
+      await new Promise(r => setTimeout(r, wait))
+      attempt++
+    }
+  }
+  console.error('[main] fetchWithRetries failed after retries', lastError?.message)
+  return null
+}
+
 async function fetchOmniSearchIds(query, cookie, pageToken) {
   const params = new URLSearchParams({
     searchQuery: query,
@@ -943,10 +1045,14 @@ async function fetchOmniSearchIds(query, cookie, pageToken) {
   })
   if (pageToken) params.set('pageToken', pageToken)
 
-  const headers = {}
+  const headers = {
+    'Accept': 'application/json, text/plain, */*',
+    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)',
+  }
   if (cookie) headers['Cookie'] = `.ROBLOSECURITY=${cookie}`
 
-  const res = await fetch(`https://apis.roblox.com/search-api/omni-search?${params}`, { headers })
+  const res = await fetchWithRetries(() => fetch(`https://apis.roblox.com/search-api/omni-search?${params}`, { headers }))
+  if (!res) throw new Error('omni-search failed after retries')
   if (!res.ok) throw new Error(`omni-search failed: ${res.status}`)
   const data = await res.json()
 
@@ -1001,8 +1107,17 @@ async function getBrowsePage(genre, page, pageSize) {
   const cookie = await getRobloxCookie()
   while (entry.ids.length < (page + 1) * pageSize && !entry.exhausted) {
     const { ids, nextPageToken } = await fetchOmniSearchIds(keyword, cookie, entry.nextPageToken)
-    if (!ids.length) { entry.exhausted = true; break }
-    for (const id of ids) if (!entry.ids.includes(id)) entry.ids.push(id)
+    if (!ids.length) {
+      if (nextPageToken) {
+        entry.nextPageToken = nextPageToken
+        continue
+      }
+      entry.exhausted = true
+      break
+    }
+    for (const id of ids) {
+      if (!entry.ids.includes(id)) entry.ids.push(id)
+    }
     entry.nextPageToken = nextPageToken || undefined
     if (!nextPageToken) entry.exhausted = true
   }
@@ -1010,12 +1125,30 @@ async function getBrowsePage(genre, page, pageSize) {
   return entry.ids.slice(page * pageSize, (page + 1) * pageSize)
 }
 
+ipcMain.handle('roboot:clearBrowseCache', (_, genre) => {
+  if (!genre) {
+    browseCache.clear()
+  } else {
+    browseCache.delete(genre)
+  }
+  return { success: true }
+})
+
 ipcMain.handle('roblox:browseGames', async (_, opts = {}) => {
   const { genre = 'all', sort = 'popular', page = 0, maxRows = 24 } = opts || {}
+  console.log('[main] roblox:browseGames', { genre, sort, page, maxRows })
   try {
-    const ids = await getBrowsePage(genre, page, maxRows)
+    let ids = await getBrowsePage(genre, page, maxRows)
+    console.log('[main] browse ids count', ids.length)
+    if (!ids.length && genre !== 'all') {
+      const keyword = GENRE_KEYWORDS[genre] || GENRE_KEYWORDS.all
+      const fallback = await fetchOmniSearchIds(keyword, await getRobloxCookie())
+      ids = fallback.ids.slice(0, maxRows)
+      console.log('[main] browse fallback ids count', ids.length)
+    }
     if (!ids.length) return []
     let games = await fetchGameDetails(ids)
+    console.log('[main] fetchGameDetails returned', games.length)
     if (sort === 'rated') {
       games = games.slice().sort((a, b) => (b.rating ?? -1) - (a.rating ?? -1))
     } else {
@@ -1023,6 +1156,7 @@ ipcMain.handle('roblox:browseGames', async (_, opts = {}) => {
     }
     return games
   } catch (e) {
+    console.error('[main] roblox:browseGames error', e.message)
     return { error: e.message }
   }
 })

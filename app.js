@@ -3,6 +3,8 @@
 // ============================================================
 
 const { ipcRenderer } = require('electron')
+const { $, $all, createElement, escapeHtml, formatCount, formatDate, on } = require('./libs/dom-utils')
+const { playThemeTransition } = require('./libs/theme-utils')
 
 // ---- WINDOW CONTROLS ---------------------------------------
 function wireWindowButton(id, channel) {
@@ -72,28 +74,6 @@ function hideSplash() {
     splash.classList.add('hide')
     setTimeout(() => splash.remove(), 500) // matches CSS transition duration
   }, wait)
-}
-
-// ---- THEME TRANSITION ------------------------------------------
-// Plays an iris-wipe transition while `applyFn` (sync or async) actually
-// swaps the theme out of view, then reveals the new look underneath.
-async function playThemeTransition(applyFn, label) {
-  const overlay = document.getElementById('theme-transition')
-  if (!overlay) { await applyFn(); return }
-  const labelEl = overlay.querySelector('.tt-label')
-  if (labelEl) labelEl.textContent = label || 'Applying theme...'
-
-  overlay.classList.remove('reveal')
-  overlay.classList.add('show')
-  await new Promise(r => setTimeout(r, 320)) // let the iris finish closing in
-
-  try {
-    await applyFn()
-  } finally {
-    await new Promise(r => setTimeout(r, 180)) // brief hold so the label is readable
-    overlay.classList.add('reveal')            // iris opens back up, revealing the new theme
-    setTimeout(() => overlay.classList.remove('show', 'reveal'), 550)
-  }
 }
 
 // ---- INIT --------------------------------------------------
@@ -200,6 +180,46 @@ function renderUserProfile(user) {
 }
 
 // ---- RENDER FRIENDS ----------------------------------------
+function looksLikeFallbackFriendName(value, id) {
+  if (typeof value !== 'string') return true
+  const trimmed = value.trim()
+  if (!trimmed) return true
+  if (/^unknown$/i.test(trimmed)) return true
+  if (id != null) {
+    return new RegExp(`^user\\s*${id}$`, 'i').test(trimmed)
+      || new RegExp(`^user\\s*\\(${id}\\)$`, 'i').test(trimmed)
+  }
+  return false
+}
+
+function getFriendlyFriendName(friend) {
+  const id = friend?.id
+  const displayCandidate = friend?.displayName || friend?.display_name || friend?.name || friend?.username || ''
+  const usernameCandidate = friend?.username || friend?.userName || friend?.name || friend?.displayName || ''
+  const displayName = typeof displayCandidate === 'string' ? displayCandidate.trim() : ''
+  const username = typeof usernameCandidate === 'string' ? usernameCandidate.trim() : ''
+
+  const resolvedDisplay = displayName && !looksLikeFallbackFriendName(displayName, id)
+    ? displayName
+    : username && !looksLikeFallbackFriendName(username, id)
+    ? username
+    : (id != null ? `User${id}` : 'User')
+
+  const resolvedUsername = username && !looksLikeFallbackFriendName(username, id) ? username : ''
+  return { displayName: resolvedDisplay, username: resolvedUsername }
+}
+
+function renderFriendIdentity(card, friend) {
+  const { displayName, username } = getFriendlyFriendName(friend)
+  const nameEl = card.querySelector('.ffc-name')
+  const usernameEl = card.querySelector('.ffc-username')
+  if (nameEl) nameEl.textContent = displayName
+  if (usernameEl) {
+    usernameEl.textContent = username && username !== displayName ? `@${username}` : ''
+    usernameEl.style.display = usernameEl.textContent ? '' : 'none'
+  }
+}
+
 function renderFriends(friends) {
   const online = friends.filter(f => f.isOnline)
   const offline = friends.filter(f => !f.isOnline)
@@ -220,9 +240,8 @@ function renderFriends(friends) {
     const colors = ['#e53935','#1565c0','#2e7d32','#6a1b9a','#f57f17','#00695c','#ad1457','#283593']
     const colorIdx = String(f.id).split('').reduce((acc, c) => acc + c.charCodeAt(0), 0) % colors.length
     const color = colors[colorIdx]
-    const username = f.username || f.name || '?'
-    const displayName = f.displayName || username
-    const initials = username.slice(0, 2).toUpperCase()
+    const { displayName, username } = getFriendlyFriendName(f)
+    const initials = (username || displayName || '?').slice(0, 2).toUpperCase()
     const bgStyle = f.avatarUrl
       ? `background:url(${f.avatarUrl}) center/cover no-repeat;`
       : `background:${color};`
@@ -263,9 +282,9 @@ function createFriendCard(friend) {
   const colorIdx = String(friend.id).split('').reduce((acc, c) => acc + c.charCodeAt(0), 0) % colors.length
   const color = colors[colorIdx]
 
-  const username = friend.username || friend.name || '?'
-  const displayName = friend.displayName || username
-  const initials = username.slice(0, 2).toUpperCase()
+  const { displayName, username } = getFriendlyFriendName(friend)
+  const initials = (username || displayName || '?').slice(0, 2).toUpperCase()
+  const usernameText = username ? `@${username}` : ''
 
   const presenceLabel = friend.presenceType === 2
     ? `<span class="ffc-game"><span class="live-dot"></span> Playing ${friend.gameName || 'a game'}</span>`
@@ -278,7 +297,8 @@ function createFriendCard(friend) {
       ${friend.avatarUrl ? '' : initials}
     </div>
     <div class="ffc-info">
-      <span class="ffc-name">${displayName}</span>
+      <span class="ffc-name">${displayName || username || 'Unknown'}</span>
+      <span class="ffc-username">${usernameText}</span>
       ${presenceLabel}
     </div>
     <div class="ffc-actions">
@@ -286,6 +306,17 @@ function createFriendCard(friend) {
       ${friend.isOnline && friend.gameId ? `<button class="btn-primary small join-btn" data-place-id="${friend.gameId}">Join</button>` : ''}
     </div>
   `
+
+  renderFriendIdentity(card, friend)
+
+  if (friend?.id && (looksLikeFallbackFriendName(friend.displayName, friend.id) || looksLikeFallbackFriendName(friend.username, friend.id) || looksLikeFallbackFriendName(friend.name, friend.id))) {
+    ipcRenderer.invoke('roblox:getUserProfile', friend.id)
+      .then(profile => {
+        if (!profile || profile.error) return
+        renderFriendIdentity(card, { ...friend, ...profile })
+      })
+      .catch(() => {})
+  }
 
   const profileBtn = card.querySelector('.btn-ghost')
   profileBtn?.addEventListener('click', async (e) => {
@@ -402,12 +433,6 @@ function renderGamesGrid(games, append = false) {
   })
 }
 
-function formatCount(n) {
-  if (!n) return '0'
-  if (n >= 1000) return (n / 1000).toFixed(1) + 'K'
-  return String(n)
-}
-
 // ---- GAME DETAIL OVERLAY -----------------------------------
 const gameDetailOverlay = document.getElementById('gameDetailOverlay')
 const gameDetailPanel   = document.getElementById('gameDetailPanel')
@@ -447,10 +472,20 @@ document.getElementById('profileBackdrop')?.addEventListener('click', closeUserP
 document.getElementById('profileClose')?.addEventListener('click', closeUserProfile)
 profileFullBtn?.addEventListener('click', () => { if (currentViewedProfile) openFullProfile(currentViewedProfile.id) })
 profileBackBtn?.addEventListener('click', returnToPreviousPage)
-profileFriendsSeeAllBtn?.addEventListener('click', () => showProfileFriendsAll(currentViewedProfile))
+profileFriendsSeeAllBtn?.addEventListener('click', (event) => {
+  event.preventDefault()
+  showProfileFriendsAll(currentViewedProfile)
+})
 profileFriendsAllBackBtn?.addEventListener('click', () => setActivePage('profile'))
+document.addEventListener('keydown', (event) => {
+  if (document.querySelector('.page.active')?.id !== 'page-profile-friends') return
+  const key = event.key?.toLowerCase()
+  if (key === 'q' || key === 'e') {
+    event.preventDefault()
+  }
+})
 
-async function openUserProfile(userId) {
+async function openUserProfile(userId, fallbackProfile = null) {
   if (!profileOverlay || !profilePanel) {
     console.error('[profile] overlay element not found')
     return
@@ -459,12 +494,12 @@ async function openUserProfile(userId) {
   profileOverlay.classList.add('open')
   profilePanel.classList.add('loading')
 
-  const user = await ipcRenderer.invoke('roblox:getUserProfile', userId)
+  const user = await ipcRenderer.invoke('roblox:getUserProfile', userId, fallbackProfile)
   profilePanel.classList.remove('loading')
 
-  if (!user || user.error) {
+  const resolvedUser = user && !user.error ? user : fallbackProfile
+  if (!resolvedUser) {
     showToast('Failed to load profile')
-    closeUserProfile()
     return
   }
 
@@ -477,21 +512,21 @@ async function openUserProfile(userId) {
   const gamesBtn = document.getElementById('profileJoinBtn')
 
   if (avatar) {
-    if (user.avatarUrl) {
-      avatar.style.background = `url(${user.avatarUrl}) center/cover`
+    if (resolvedUser.avatarUrl) {
+      avatar.style.background = `url(${resolvedUser.avatarUrl}) center/cover`
       avatar.textContent = ''
     } else {
       avatar.style.background = 'var(--bg3)'
-      avatar.textContent = (user.username || 'U').slice(0, 2).toUpperCase()
+      avatar.textContent = (resolvedUser.username || 'U').slice(0, 2).toUpperCase()
     }
   }
 
-  if (nameEl) nameEl.textContent = user.displayName || user.username || 'Unknown'
-  if (handleEl) handleEl.textContent = `@${user.username || 'unknown'}`
+  if (nameEl) nameEl.textContent = resolvedUser.displayName || resolvedUser.username || 'Unknown'
+  if (handleEl) handleEl.textContent = `@${resolvedUser.username || 'unknown'}`
 
-  const statusText = user.presenceType === 2
-    ? `Playing ${user.gameName || 'a game'}`
-    : user.presenceType === 1
+  const statusText = resolvedUser.presenceType === 2
+    ? `Playing ${resolvedUser.gameName || 'a game'}`
+    : resolvedUser.presenceType === 1
     ? 'Online'
     : 'Offline'
   if (statusEl) statusEl.textContent = statusText
@@ -500,11 +535,11 @@ async function openUserProfile(userId) {
     infoEl.innerHTML = `
       <div class="profile-stat">
         <span class="ps-label">User ID</span>
-        <span class="ps-value">${user.id}</span>
+        <span class="ps-value">${resolvedUser.id}</span>
       </div>
       <div class="profile-stat">
         <span class="ps-label">Created</span>
-        <span class="ps-value">${formatDate(user.created)}</span>
+        <span class="ps-value">${formatDate(resolvedUser.created)}</span>
       </div>
       <div class="profile-stat">
         <span class="ps-label">Status</span>
@@ -514,22 +549,22 @@ async function openUserProfile(userId) {
   }
 
   if (bioEl) {
-    bioEl.textContent = user.description || 'No bio available.'
+    bioEl.textContent = resolvedUser.description || 'No bio available.'
   }
 
   if (gamesBtn) {
-    if (user.presenceType === 2 && user.rootPlaceId) {
+    if (resolvedUser.presenceType === 2 && resolvedUser.rootPlaceId) {
       gamesBtn.style.display = ''
       gamesBtn.onclick = async () => {
-        showToast(`▶ Joining ${user.displayName || user.username}'s game...`)
-        await ipcRenderer.invoke('roblox:launchGame', user.rootPlaceId)
+        showToast(`▶ Joining ${resolvedUser.displayName || resolvedUser.username}'s game...`)
+        await ipcRenderer.invoke('roblox:launchGame', resolvedUser.rootPlaceId)
       }
     } else {
       gamesBtn.style.display = 'none'
     }
   }
 
-  currentViewedProfile = user
+  currentViewedProfile = resolvedUser
   if (profileFullBtn) profileFullBtn.disabled = false
 }
 
@@ -688,27 +723,65 @@ function renderProfileFriendPreview(profile) {
   })
 }
 
+const PROFILE_FRIENDS_PAGE_SIZE = 12
+let profileFriendsPageState = { page: 1, totalPages: 1 }
+
 function renderProfileFriendsAll(profile) {
   const list = document.querySelector('.profile-friends-full-list')
   if (!list) return
   list.innerHTML = ''
 
-  const friends = Array.isArray(profile.friends) ? profile.friends : []
+  const friends = Array.isArray(profile?.friends) ? profile.friends : []
   if (!friends.length) {
     list.innerHTML = '<p class="no-friends">No friends to show.</p>'
     return
   }
 
-  friends.forEach(friend => {
+  const totalPages = Math.max(1, Math.ceil(friends.length / PROFILE_FRIENDS_PAGE_SIZE))
+  profileFriendsPageState.totalPages = totalPages
+  profileFriendsPageState.page = Math.min(Math.max(profileFriendsPageState.page || 1, 1), totalPages)
+
+  const start = (profileFriendsPageState.page - 1) * PROFILE_FRIENDS_PAGE_SIZE
+  const visibleFriends = friends.slice(start, start + PROFILE_FRIENDS_PAGE_SIZE)
+
+  visibleFriends.forEach(friend => {
     list.appendChild(createFriendCard(friend))
   })
+
+  if (totalPages > 1) {
+    const pager = document.createElement('div')
+    pager.className = 'profile-friends-pager'
+    pager.innerHTML = `
+      <button class="btn-ghost small pager-btn" data-action="prev">Prev</button>
+      <div class="profile-friends-pager-info">Page ${profileFriendsPageState.page} of ${totalPages}</div>
+      <button class="btn-ghost small pager-btn" data-action="next">Next</button>
+    `
+    list.appendChild(pager)
+
+    pager.querySelector('[data-action="prev"]')?.addEventListener('click', () => changeProfileFriendsPage(-1))
+    pager.querySelector('[data-action="next"]')?.addEventListener('click', () => changeProfileFriendsPage(1))
+  }
+}
+
+function changeProfileFriendsPage(delta) {
+  if (!currentViewedProfile?.friends?.length) return
+  const totalPages = Math.max(1, Math.ceil(currentViewedProfile.friends.length / PROFILE_FRIENDS_PAGE_SIZE))
+  const nextPage = Math.min(totalPages, Math.max(1, profileFriendsPageState.page + delta))
+  if (nextPage === profileFriendsPageState.page) return
+  profileFriendsPageState.page = nextPage
+  renderProfileFriendsAll(currentViewedProfile)
 }
 
 function showProfileFriendsAll(profile) {
-  if (!profile) return
-  if (profileFriendsAllTitle) profileFriendsAllTitle.textContent = `${profile.displayName || profile.username || 'User'}'s Friends`
-  if (profileFriendsAllHandle) profileFriendsAllHandle.textContent = `@${profile.username || 'unknown'}`
-  renderProfileFriendsAll(profile)
+  const targetProfile = profile || currentViewedProfile
+  if (!targetProfile) {
+    console.warn('[profile] showProfileFriendsAll called without a loaded profile')
+    return
+  }
+  profileFriendsPageState.page = 1
+  if (profileFriendsAllTitle) profileFriendsAllTitle.textContent = `${targetProfile.displayName || targetProfile.username || 'User'}'s Friends`
+  if (profileFriendsAllHandle) profileFriendsAllHandle.textContent = `@${targetProfile.username || 'unknown'}`
+  renderProfileFriendsAll(targetProfile)
   setActivePage('profile-friends')
 }
 
@@ -847,15 +920,6 @@ async function openGameDetail(universeId) {
   gameDetailPanel.scrollTop = 0
 }
 
-function escapeHtml(str) {
-  return str.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
-}
-
-function formatDate(iso) {
-  if (!iso) return '--'
-  return new Date(iso).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' })
-}
-
 // ---- NAVIGATION --------------------------------------------
 const navItems = document.querySelectorAll('.nav-item')
 const pages = document.querySelectorAll('.page')
@@ -923,25 +987,54 @@ async function loadGamesPage({ reset = false } = {}) {
 
   if (reset) {
     gamesPageState.page = 0
-    grid.innerHTML = Array(6).fill('<div class="game-skeleton tall"></div>').join('')
+    if (grid) grid.innerHTML = Array(6).fill('<div class="game-skeleton tall"></div>').join('')
     setLoadMoreVisible(false)
+    await ipcRenderer.invoke('roboot:clearBrowseCache', gamesPageState.genre)
   } else if (loadMoreBtn) {
     loadMoreBtn.textContent = 'Loading...'
     loadMoreBtn.disabled = true
   }
 
-  const games = await ipcRenderer.invoke('roblox:browseGames', {
-    genre:   gamesPageState.genre,
-    sort:    gamesPageState.sort,
-    page:    gamesPageState.page,
-    maxRows: GAMES_PAGE_SIZE,
+  console.log('[games] loadGamesPage', {
+    genre: gamesPageState.genre,
+    sort: gamesPageState.sort,
+    page: gamesPageState.page,
+    reset,
   })
 
-  gamesPageState.loading = false
-  if (loadMoreBtn) { loadMoreBtn.textContent = 'Load More'; loadMoreBtn.disabled = false }
+  let games
+  try {
+    console.log('[games] invoking browseGames', {
+      genre: gamesPageState.genre || 'all',
+      sort:  gamesPageState.sort,
+      page:  gamesPageState.page,
+    })
+    games = await ipcRenderer.invoke('roblox:browseGames', {
+      genre:   gamesPageState.genre || 'all',
+      sort:    gamesPageState.sort,
+      page:    gamesPageState.page,
+      maxRows: GAMES_PAGE_SIZE,
+    })
+    console.log('[games] browseGames returned', games && games.length ? games.length : 'error', games?.error)
+  } catch (error) {
+    console.error('[games] loadGamesPage error', error)
+    games = { error: error?.message || 'Unknown error' }
+  } finally {
+    gamesPageState.loading = false
+    if (loadMoreBtn) {
+      loadMoreBtn.textContent = 'Load More'
+      loadMoreBtn.disabled = false
+    }
+  }
 
-  if (!games || games.error) {
-    if (reset) grid.innerHTML = '<p class="no-friends">Failed to load games.</p>'
+  if (!Array.isArray(games) || games.error) {
+    if (reset && grid) grid.innerHTML = '<p class="no-friends">Failed to load games.</p>'
+    setLoadMoreVisible(false)
+    return
+  }
+
+  if (!games.length && reset && grid) {
+    grid.innerHTML = '<p class="no-friends">No games found.</p>'
     setLoadMoreVisible(false)
     return
   }
@@ -961,6 +1054,7 @@ document.querySelector('.sort-select')?.addEventListener('change', () => {
 // ---- GENRE FILTER ------------------------------------------
 document.querySelectorAll('.genre-btn').forEach(btn => {
   btn.addEventListener('click', () => {
+    console.log('[games] genre clicked', btn.dataset.genre)
     document.querySelectorAll('.genre-btn').forEach(b => b.classList.remove('active'))
     btn.classList.add('active')
     gamesPageState.genre = btn.dataset.genre
@@ -989,6 +1083,9 @@ document.querySelectorAll('.see-all').forEach(link => {
     // Switch to the Games page and show this row's full list
     document.querySelector('[data-page="games"]')?.click()
     document.querySelectorAll('.genre-btn').forEach(b => b.classList.remove('active'))
+    document.querySelector('.genre-btn[data-genre="all"]')?.classList.add('active')
+    gamesPageState.genre = 'all'
+    gamesPageState.page = 0
     setLoadMoreVisible(false)
 
     const grid = document.querySelector('.games-full-grid')
@@ -1178,8 +1275,8 @@ init()
 //  GAME DETAIL MODAL
 // ============================================================
 
-const gameModalBackdrop = document.getElementById('gameModalBackdrop')
-const gameModalClose    = document.getElementById('gameModalClose')
+const gameModalBackdrop = document.getElementById('gdBackdrop')
+const gameModalClose    = document.getElementById('gdClose')
 let   currentGamePlaceId = null
 
 // Open modal
@@ -1339,15 +1436,4 @@ renderGameRow = function(selector, games) {
   })
 }
 
-const _origRenderGamesGrid = renderGamesGrid
-renderGamesGrid = function(games) {
-  _origRenderGamesGrid(games)
-  const grid = document.querySelector('.games-full-grid')
-  if (!grid) return
-  grid.querySelectorAll('.full-game-card').forEach((card, i) => {
-    card.addEventListener('click', e => {
-      if (e.target.closest('.btn-primary')) return
-      openGameModal(games[i])
-    })
-  })
-}
+// No wrapper for renderGamesGrid; click binding is handled inside renderGamesGrid itself.
