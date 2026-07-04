@@ -1,0 +1,551 @@
+/* ============================================================
+   RoBoot — "Roblox 2017" Theme
+   Recreates the look of the old Roblox.com / desktop client:
+   light grey + white panels, navy/charcoal nav, classic
+   "web blue" accent, bevelled buttons, Arial, square corners.
+   Upload this file via Settings > Display > Custom Themes.
+   ============================================================ */
+
+/* ---------- CORE PALETTE ----------
+   Most of RoBoot's CSS already reads from these variables, so
+   redefining them re-colors almost the whole app automatically. */
+:root {
+  --bg:        #e3e3e3 !important; /* page background */
+  --bg2:       #ffffff !important; /* card / panel background */
+  --bg3:       #f0f0f0 !important; /* hover / subtle fill */
+  --bg4:       #d6d6d6 !important; /* borders, tracks */
+  --bg5:       #bdbdbd !important; /* darker borders/tracks */
+  --accent:    #0093ff !important; /* classic "Roblox blue" */
+  --cyan:      #00b2ff !important;
+  --purple:    #5b6cff !important;
+  --green:     #00b06f !important; /* classic Roblox green (Play / online) */
+  --text:      #393b3d !important; /* near-black body text */
+  --text2:     #6b6f72 !important;
+  --text3:     #9a9d9f !important;
+  --border:    #d4d4d4 !important;
+  --border2:   rgba(0,147,255,0.45) !important;
+  --radius:    3px !important;     /* classic square-ish corners */
+  --font:      Arial, 'Helvetica Neue', Helvetica, sans-serif !important;
+}
+
+body { font-size: 12px !important; }
+
+/* Kill the modern particle canvas — not period-accurate */
+#bg-canvas { display: none !important; }
+
+/* Square off the window — 2017 Roblox had no rounded chrome */
+.app, #login-screen { border-radius: 0 !important; }
+
+/* ============================================================
+   SIDEBAR  (stands in for the classic dark top nav bar)
+   ============================================================ */
+.sidebar {
+  background: #23282d !important;
+  border-right: 1px solid #000 !important;
+}
+
+.logo, .sidebar-profile {
+  border-bottom: 1px solid #14171a !important;
+}
+
+.logo-text { color: #c9cdd0 !important; }
+.logo-text strong { color: #ffffff !important; }
+.logo-for { color: #7a7f83 !important; }
+
+.sp-avatar-inner {
+  background-color: #3d4248 !important; /* fallback only — never set background-image here,
+                                            or it'll fight the inline avatar photo the same way */
+  border-color: #14171a !important;
+  border-radius: 50% !important; /* avatars stay round, like Roblox headshots */
+}
+.sp-status-dot { border-color: #23282d !important; }
+.sp-name { color: #fff !important; }
+.sp-handle { color: #84898c !important; }
+
+.nav-item { color: #b7bbbe !important; }
+.nav-item:hover, .nav-item.active {
+  background: #1a1e22 !important;
+  color: #ffffff !important;
+}
+.nav-glow { background: var(--accent) !important; border-radius: 0 !important; }
+.nav-badge { background: var(--accent) !important; color: #fff !important; border-radius: 2px !important; }
+.sidebar-divider { background: #14171a !important; }
+
+.sidebar-launch { background: transparent !important; }
+
+/* Classic bevelled green "Play"-style launch button */
+.launch-btn {
+  background: linear-gradient(#00c47d, #00a262) !important;
+  border: 1px solid #00824f !important;
+  border-radius: 3px !important;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.35), 0 1px 0 rgba(0,0,0,0.2) !important;
+  color: #ffffff !important;
+  text-shadow: 0 1px 0 rgba(0,0,0,0.2) !important;
+}
+.launch-btn:hover { background: linear-gradient(#00d488, #00b06c) !important; }
+.launch-btn:active { background: linear-gradient(#00a262, #00c47d) !important; }
+
+.logout-btn {
+  background: #2c3136 !important;
+  border: 1px solid #14171a !important;
+  border-radius: 3px !important;
+  color: #9aa0a3 !important;
+}
+.logout-btn:hover { color: #fff !important; background: #353b41 !important; }
+
+/* ============================================================
+   MAIN CONTENT / TOPBAR
+   ============================================================ */
+.content, .scroll-area { background: var(--bg) !important; }
+
+.topbar {
+  background: #ffffff !important;
+  border-bottom: 1px solid var(--border) !important;
+}
+
+.page-title { color: var(--text) !important; font-weight: 700 !important; }
+.title-underline { background: var(--accent) !important; border-radius: 0 !important; }
+
+.search-bar {
+  background: #ffffff !important;
+  border: 1px solid #c7c7c7 !important;
+  border-radius: 3px !important;
+  box-shadow: inset 0 1px 2px rgba(0,0,0,0.06) !important;
+}
+.search-bar input { color: var(--text) !important; }
+.search-bar input::placeholder { color: var(--text3) !important; }
+.search-bar kbd {
+  background: #ececec !important;
+  border: 1px solid #c7c7c7 !important;
+  color: var(--text3) !important;
+  border-radius: 2px !important;
+}
+
+/* ============================================================
+   HOME PAGE
+   ============================================================ */
+.hp-avatar, .profile-avatar {
+  background-color: #4d5359 !important; /* fallback only — must not be a `background` shorthand,
+                                            or it overrides the inline avatar photo URL */
+  border-color: var(--border) !important;
+  color: #fff !important;
+}
+.hp-name, .profile-name { color: var(--text) !important; }
+.hp-handle, .profile-id { color: var(--text3) !important; }
+
+.section-title { color: var(--text) !important; }
+.section-count { color: var(--text3) !important; }
+.see-all { color: var(--accent) !important; }
+
+.conn-name { color: var(--text2) !important; }
+
+/* Game cards (home page horizontal rows) */
+.game-thumb {
+  border-radius: 3px !important;
+  border: 1px solid var(--border) !important;
+  background: #f5f5f5 !important;
+}
+.thumb-label { color: rgba(0,0,0,0.18) !important; }
+.play-icon { background: rgba(255,255,255,0.95) !important; border-radius: 2px !important; }
+.game-players-badge { background: rgba(0,0,0,0.6) !important; border-radius: 2px !important; }
+.game-title { color: var(--text) !important; }
+.game-rating { color: var(--text3) !important; }
+.star { color: #f2b30b !important; }
+
+/* ============================================================
+   GAMES PAGE
+   ============================================================ */
+.genre-btn {
+  background: #ffffff !important;
+  border: 1px solid #c7c7c7 !important;
+  color: var(--text2) !important;
+  border-radius: 3px !important;
+}
+.genre-btn:hover { background: #f0f0f0 !important; color: var(--text) !important; }
+.genre-btn.active {
+  background: linear-gradient(#1faaff, #0093ff) !important;
+  border-color: #0077cc !important;
+  color: #fff !important;
+}
+
+.sort-wrap { color: var(--text3) !important; }
+.sort-select {
+  background: #ffffff !important;
+  border: 1px solid #c7c7c7 !important;
+  color: var(--text) !important;
+  border-radius: 3px !important;
+}
+
+.full-game-card {
+  background: #ffffff !important;
+  border: 1px solid var(--border) !important;
+  border-radius: 3px !important;
+  box-shadow: 0 1px 2px rgba(0,0,0,0.06) !important;
+}
+.full-game-card:hover { border-color: var(--accent) !important; transform: none !important; }
+.fgc-thumb { background: #f5f5f5 !important; }
+.fgc-name { color: var(--text) !important; }
+.fgc-rating { color: #c98a00 !important; }
+.fgc-tags span { background: #ececec !important; color: var(--text3) !important; border-radius: 2px !important; }
+.fgc-players { color: var(--text3) !important; }
+
+/* ============================================================
+   BUTTONS  (classic bevelled "web blue" buttons)
+   ============================================================ */
+.btn-primary {
+  background: linear-gradient(#1faaff, #0093ff) !important;
+  border: 1px solid #0077cc !important;
+  border-radius: 3px !important;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.35), 0 1px 0 rgba(0,0,0,0.1) !important;
+  color: #ffffff !important;
+  text-shadow: 0 1px 0 rgba(0,0,0,0.15) !important;
+}
+.btn-primary:hover { background: linear-gradient(#3cb6ff, #1f9dff) !important; }
+
+.btn-secondary {
+  background: linear-gradient(#ffffff, #f0f0f0) !important;
+  border: 1px solid #c7c7c7 !important;
+  border-radius: 3px !important;
+  color: var(--text) !important;
+}
+.btn-secondary:hover { background: linear-gradient(#ffffff, #e6e6e6) !important; border-color: #b8b8b8 !important; }
+
+.btn-ghost {
+  background: transparent !important;
+  border: 1px solid #c7c7c7 !important;
+  border-radius: 3px !important;
+  color: var(--text2) !important;
+}
+.btn-ghost:hover { background: #f0f0f0 !important; color: var(--text) !important; }
+
+/* ============================================================
+   FRIENDS PAGE
+   ============================================================ */
+.fstat-num { color: var(--text) !important; }
+.fstat-lbl { color: var(--text3) !important; }
+.friends-section-label { color: var(--text3) !important; }
+
+.friend-full-card {
+  background: #ffffff !important;
+  border: 1px solid var(--border) !important;
+  border-radius: 3px !important;
+}
+.friend-full-card:hover { background: #f7f7f7 !important; }
+.friend-full-card.pending {
+  border-color: rgba(0,147,255,0.3) !important;
+  background: rgba(0,147,255,0.05) !important;
+}
+.friend-full-card.online .ffc-avatar::after { border-color: #ffffff !important; }
+
+.ffc-name { color: var(--text) !important; }
+.ffc-game { color: var(--text2) !important; }
+.decline-btn { color: #d8442c !important; border-color: rgba(216,68,44,0.3) !important; }
+.decline-btn:hover { background: rgba(216,68,44,0.08) !important; }
+
+/* ============================================================
+   SETTINGS PAGE
+   ============================================================ */
+.sn-item { color: var(--text2) !important; }
+.sn-item:hover { background: #ececec !important; color: var(--text) !important; }
+.sn-item.active {
+  background: #ececec !important;
+  color: var(--text) !important;
+  border-left: 2px solid var(--accent) !important;
+}
+
+.settings-group {
+  background: #ffffff !important;
+  border: 1px solid var(--border) !important;
+  border-radius: 3px !important;
+}
+.sg-title { color: var(--text3) !important; }
+.sg-desc { color: var(--text3) !important; }
+.setting-row { border-top-color: var(--border) !important; }
+.sr-label { color: var(--text) !important; }
+.sr-desc { color: var(--text3) !important; }
+
+.ct-upload-btn {
+  background: linear-gradient(#1faaff, #0093ff) !important;
+  border: 1px solid #0077cc !important;
+  color: #fff !important;
+  border-radius: 3px !important;
+}
+.ct-reset-btn {
+  background: #ececec !important;
+  border: 1px solid #c7c7c7 !important;
+  color: var(--text) !important;
+  border-radius: 3px !important;
+}
+.ct-row {
+  background: #f5f5f5 !important;
+  border: 1px solid var(--border) !important;
+  border-radius: 3px !important;
+}
+.ct-row.active { border-color: var(--accent) !important; }
+.ct-name { color: var(--text) !important; }
+.ct-apply-btn, .ct-delete-btn {
+  border: 1px solid #c7c7c7 !important;
+  color: var(--text2) !important;
+  border-radius: 2px !important;
+}
+.ct-row.active .ct-apply-btn { background: var(--accent) !important; color: #fff !important; }
+.ct-delete-btn { color: #d8442c !important; }
+
+/* Classic square-ish toggle switch */
+.toggle-track {
+  background: #d6d6d6 !important;
+  border: 1px solid #b8b8b8 !important;
+  border-radius: 11px !important;
+}
+.toggle-thumb {
+  background: #ffffff !important;
+  border: 1px solid #b8b8b8 !important;
+  box-shadow: 0 1px 1px rgba(0,0,0,0.15) !important;
+}
+.toggle input:checked + .toggle-track {
+  background: #79d6ad !important;
+  border-color: #00824f !important;
+}
+.toggle input:checked + .toggle-track .toggle-thumb {
+  background: #ffffff !important;
+  border-color: #00824f !important;
+  box-shadow: 0 1px 1px rgba(0,0,0,0.2) !important;
+}
+
+.settings-slider { background: #d6d6d6 !important; }
+.settings-slider::-webkit-slider-thumb { background: var(--accent) !important; border: 1px solid #0077cc !important; }
+.slider-val { color: var(--accent) !important; }
+
+.settings-input {
+  background: #ffffff !important;
+  border: 1px solid #c7c7c7 !important;
+  color: var(--text) !important;
+  border-radius: 3px !important;
+}
+.settings-input:focus { border-color: var(--accent) !important; }
+
+.theme-preview { border-radius: 2px !important; }
+.theme-opt span { color: var(--text3) !important; }
+
+.kb-action { color: var(--text2) !important; }
+.kb-key {
+  background: #ececec !important;
+  border: 1px solid #c7c7c7 !important;
+  color: var(--text2) !important;
+  border-radius: 2px !important;
+}
+
+/* ============================================================
+   TOAST
+   ============================================================ */
+.toast {
+  background: #ffffff !important;
+  border: 1px solid var(--border) !important;
+  color: var(--text) !important;
+  border-radius: 3px !important;
+  box-shadow: 0 2px 10px rgba(0,0,0,0.18) !important;
+}
+
+/* ============================================================
+   LOGIN SCREEN
+   ============================================================ */
+#login-screen { background: #d8d8d8 !important; }
+
+.login-card {
+  background: #ffffff !important;
+  border: 1px solid #c7c7c7 !important;
+  border-radius: 4px !important;
+  box-shadow: 0 2px 12px rgba(0,0,0,0.15) !important;
+}
+
+/* Recolor the logo glyph for a white card (it was drawn white-on-dark) */
+.login-logo svg rect { fill: #0093ff !important; }
+
+.login-app-name { color: var(--text) !important; }
+.login-app-sub { color: var(--text3) !important; }
+.login-title { color: var(--text) !important; }
+.login-desc { color: var(--text2) !important; }
+
+.login-btn {
+  background: linear-gradient(#1faaff, #0093ff) !important;
+  border: 1px solid #0077cc !important;
+  border-radius: 3px !important;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.35) !important;
+  color: #ffffff !important;
+  text-shadow: 0 1px 0 rgba(0,0,0,0.15) !important;
+}
+.login-btn:hover { background: linear-gradient(#3cb6ff, #1f9dff) !important; }
+.login-note { color: var(--text3) !important; }
+
+.premium-badge { color: #b8870a !important; background: rgba(255,193,7,0.12) !important; border-color: rgba(255,193,7,0.3) !important; }
+
+/* ============================================================
+   GAME DETAIL OVERLAY
+   ============================================================ */
+.game-detail-panel {
+  background: #ffffff !important;
+  border-left: 1px solid var(--border) !important;
+}
+.gd-hero-art { background-color: #e3e3e3 !important; }
+.gd-hero-gradient {
+  background: linear-gradient(to bottom, rgba(0,0,0,0.15) 0%, #ffffff 100%) !important;
+}
+.gd-close {
+  background: rgba(0,0,0,0.55) !important;
+  border: 1px solid rgba(255,255,255,0.25) !important;
+}
+.gd-thumbnail {
+  background-color: #e3e3e3 !important;
+  border: 2px solid #ffffff !important;
+  border-radius: 4px !important;
+  box-shadow: 0 2px 10px rgba(0,0,0,0.25) !important;
+}
+.gd-title { color: var(--text) !important; }
+.gd-creator { color: var(--text3) !important; }
+.gd-creator span { color: var(--accent) !important; }
+.gd-badge.rating { background: rgba(242,179,11,0.12) !important; color: #b8870a !important; border-color: rgba(242,179,11,0.3) !important; }
+.gd-badge.players { background: rgba(0,176,111,0.1) !important; color: var(--green) !important; border-color: rgba(0,176,111,0.25) !important; }
+
+.gd-actions { border-bottom-color: var(--border) !important; }
+.gd-play-btn {
+  background: linear-gradient(#00c47d, #00a262) !important;
+  border: 1px solid #00824f !important;
+  border-radius: 3px !important;
+  color: #ffffff !important;
+  text-shadow: 0 1px 0 rgba(0,0,0,0.2) !important;
+}
+.gd-play-btn:hover { background: linear-gradient(#00d488, #00b06c) !important; }
+.gd-stat-val { color: var(--text) !important; }
+.gd-stat-lbl { color: var(--text3) !important; }
+
+.gd-screenshot {
+  background-color: #e3e3e3 !important;
+  border: 1px solid var(--border) !important;
+  border-radius: 3px !important;
+}
+.gd-screenshot:hover { border-color: var(--accent) !important; }
+
+.gd-section-label { color: var(--text3) !important; }
+.gd-description { color: var(--text2) !important; }
+.gd-expand-btn { color: var(--accent) !important; }
+
+.gd-detail-cell {
+  background: #f5f5f5 !important;
+  border: 1px solid var(--border) !important;
+  border-radius: 3px !important;
+}
+.gd-detail-label { color: var(--text3) !important; }
+.gd-detail-value { color: var(--text) !important; }
+
+/* ============================================================
+   SCROLLBARS
+   ============================================================ */
+.page::-webkit-scrollbar-thumb,
+.settings-content::-webkit-scrollbar-thumb,
+.games-row::-webkit-scrollbar-thumb {
+  background: #c7c7c7 !important;
+}
+
+/* ============================================================
+   STRUCTURAL LAYOUT — HORIZONTAL TOP NAV
+   The real 2017 Roblox site used a full-width dark header bar,
+   not a sidebar. This section re-flows .app from a 2-column
+   grid (sidebar | content) into a 2-row grid (topbar / content)
+   and rearranges the sidebar's own children — logo, nav links,
+   secondary nav, profile, launch button — left-to-right using
+   flex `order`, with no HTML changes required.
+   ============================================================ */
+
+.app {
+  grid-template-columns: 1fr !important;
+  grid-template-rows: 54px 1fr !important;
+}
+
+/* The bar itself */
+.sidebar {
+  flex-direction: row !important;
+  align-items: center !important;
+  height: 54px !important;
+  width: 100% !important;
+  padding: 0 84px 0 0 !important; /* clear space on the right for the window buttons */
+  overflow: visible !important;
+  border-right: none !important;
+  border-bottom: 2px solid #0093ff !important;
+  /* Whole bar is a drag handle; interactive children opt back out below. */
+  -webkit-app-region: drag !important;
+}
+.sidebar a, .sidebar button, .sidebar input, .sidebar label {
+  -webkit-app-region: no-drag !important;
+}
+/* The old floating drag strip is redundant now the whole bar drags */
+.titlebar-drag { display: none !important; }
+.window-bar { top: 21px !important; }
+
+/* Reorder children left → right: logo, primary nav, divider, secondary nav, (spacer), profile, launch */
+.logo            { order: 1 !important; }
+.nav:not(.nav-secondary) { order: 2 !important; }
+.sidebar-divider { order: 3 !important; }
+.nav-secondary   { order: 4 !important; }
+.sidebar-profile { order: 5 !important; margin-left: auto !important; }
+.sidebar-launch  { order: 6 !important; }
+
+.logo {
+  height: 100% !important;
+  padding: 0 16px 0 18px !important;
+  border-bottom: none !important;
+  border-right: 1px solid #14171a !important;
+  flex-shrink: 0 !important;
+}
+
+.sidebar-profile {
+  height: 100% !important;
+  padding: 0 16px !important;
+  border-bottom: none !important;
+  border-left: 1px solid #14171a !important;
+  flex-shrink: 0 !important;
+}
+
+.nav {
+  flex-direction: row !important;
+  align-items: center !important;
+  height: 100% !important;
+  padding: 0 !important;
+  gap: 2px !important;
+  flex-shrink: 0 !important;
+}
+
+.nav-item {
+  height: 100% !important;
+  padding: 0 14px !important;
+}
+
+/* The old left-edge accent bar doesn't read well in a horizontal bar —
+   swap it for a bottom underline, like the real site's active-tab state. */
+.nav-glow { display: none !important; }
+.nav-item.active {
+  box-shadow: inset 0 -3px 0 0 var(--accent) !important;
+}
+
+.sidebar-divider {
+  width: 1px !important;
+  height: 26px !important;
+  margin: 0 6px !important;
+  background: #14171a !important;
+  flex-shrink: 0 !important;
+}
+
+.sidebar-launch {
+  height: 100% !important;
+  margin-top: 0 !important;
+  padding: 0 0 0 16px !important;
+  display: flex !important;
+  align-items: center !important;
+  gap: 8px !important;
+  flex-shrink: 0 !important;
+}
+.launch-btn { width: auto !important; padding: 7px 16px !important; white-space: nowrap !important; }
+.logout-btn { width: auto !important; margin-top: 0 !important; padding: 7px 12px !important; white-space: nowrap !important; }
+
+/* Content no longer needs the extra clearance that compensated for
+   buttons floating over it when the sidebar was a left column. */
+.topbar { padding-top: 10px !important; }

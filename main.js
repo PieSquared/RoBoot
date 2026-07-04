@@ -14,6 +14,7 @@ const {
   generateCodeVerifier, generateCodeChallenge, generateState,
 } = require('./auth')
 const { normalizeFriendIdentity } = require('./libs/friend-utils')
+const robloxApi = require('./libs/roblox-api')
 
 // ---- CONSTANTS ---------------------------------------------
 const CLIENT_ID     = '8472608127595747627'
@@ -27,8 +28,8 @@ const RBX_PARTITION = 'persist:roblox'
 // Themes are plain .css files only — never arbitrary JS/HTML. This renderer
 // runs with nodeIntegration:true, so executing unvetted code here would have
 // full access to the OAuth token file and the .ROBLOSECURITY cookie.
-const THEMES_DIR    = () => path.join(app.getPath('userData'), 'themes')
-const SETTINGS_PATH = () => path.join(app.getPath('userData'), 'roboot_settings.json')
+const THEMES_DIR    = () => path.join(__dirname, 'themes')
+const CONFIG_PATH   = () => path.join(__dirname, 'config.json')
 let activeThemeCssKey = null // key returned by insertCSS, needed to remove it later
 
 function ensureThemesDir() {
@@ -37,16 +38,25 @@ function ensureThemesDir() {
   return dir
 }
 
+function ensureConfigFile() {
+  const configFile = CONFIG_PATH()
+  if (!fs.existsSync(configFile)) {
+    try { fs.writeFileSync(configFile, '{}') } catch (e) { console.error('ensureConfigFile:', e) }
+  }
+  return configFile
+}
+
 function readSettings() {
   try {
-    return JSON.parse(fs.readFileSync(SETTINGS_PATH(), 'utf8'))
+    const file = ensureConfigFile()
+    return JSON.parse(fs.readFileSync(file, 'utf8') || '{}')
   } catch { return {} }
 }
 
 function writeSettings(patch) {
   const current = readSettings()
   const merged = { ...current, ...patch }
-  try { fs.writeFileSync(SETTINGS_PATH(), JSON.stringify(merged)) } catch (e) { console.error('writeSettings:', e) }
+  try { fs.writeFileSync(ensureConfigFile(), JSON.stringify(merged, null, 2)) } catch (e) { console.error('writeSettings:', e) }
   return merged
 }
 
@@ -63,7 +73,7 @@ async function applyTheme(filename) {
     activeThemeCssKey = null
   }
   if (!filename) { // "filename" empty/null means reset to default
-    writeSettings({ activeTheme: null })
+    writeSettings({ theme: null })
     return { success: true }
   }
   const filePath = path.join(ensureThemesDir(), filename)
@@ -71,7 +81,7 @@ async function applyTheme(filename) {
   const css = fs.readFileSync(filePath, 'utf8')
   try {
     activeThemeCssKey = await mainWindow.webContents.insertCSS(css)
-    writeSettings({ activeTheme: filename })
+    writeSettings({ theme: filename })
     return { success: true }
   } catch (e) {
     return { success: false, error: e.message }
@@ -119,6 +129,7 @@ function createWindow() {
     }
   })
 
+  ensureThemesDir()
   mainWindow.loadFile('index.html')
 
   mainWindow.webContents.on('did-finish-load', () => {
@@ -138,8 +149,8 @@ function createWindow() {
       }
     `)
 
-    const { activeTheme } = readSettings()
-    if (activeTheme) applyTheme(activeTheme)
+    const { theme } = readSettings()
+    if (theme) applyTheme(theme)
   })
 }
 
@@ -246,18 +257,7 @@ function startInAppOAuth() {
 }
 
 // ---- GET .ROBLOSECURITY COOKIE -----------------------------
-async function getRobloxCookie() {
-  try {
-    const rblxSession = session.fromPartition(RBX_PARTITION)
-    const cookies = await rblxSession.cookies.get({
-      domain: '.roblox.com',
-      name:   '.ROBLOSECURITY',
-    })
-    return cookies.length > 0 ? cookies[0].value : null
-  } catch {
-    return null
-  }
-}
+// This helper is implemented in libs/roblox-api.js for shared Roblox request logic.
 
 // ---- OMNI-RECOMMENDATION -----------------------------------
 // Roblox's own home page discovery endpoint. Returns personalised
@@ -273,24 +273,7 @@ async function fetchOmniSorts(cookie) {
     return omniSortsCache.sorts
   }
 
-  const res = await fetch('https://apis.roblox.com/discovery-api/omni-recommendation', {
-    method:  'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Cookie':        `.ROBLOSECURITY=${cookie}`,
-    },
-    body: JSON.stringify({ pageType: 'Home', sessionId: crypto.randomUUID() }),
-  })
-
-  if (!res.ok) throw new Error(`omni-recommendation failed: ${res.status}`)
-  const data = await res.json()
-
-  const sorts = {}
-  for (const sort of data.sorts || []) {
-    const ids = (sort.recommendationList || []).map(r => r.contentId).filter(Boolean)
-    if (ids.length) sorts[sort.topic] = ids
-  }
-
+  const sorts = await robloxApi.fetchOmniSorts(cookie)
   omniSortsCache = { sorts, ts: now }
   console.log('[omni] available sort topics:', Object.keys(sorts))
   return sorts
@@ -395,7 +378,7 @@ ipcMain.handle('roblox:getFriends', async () => {
     const { data: usersData = [] } = await usersRes.json()
     const userMap = Object.fromEntries(usersData.map(u => [u.id, u]))
 
-    const cookie = await getRobloxCookie()
+    const cookie = await robloxApi.getRobloxCookie()
     const cookieHeader = cookie ? { Cookie: `.ROBLOSECURITY=${cookie}` } : {}
 
     const [presenceResult, avatarResult] = await Promise.allSettled([
@@ -449,7 +432,7 @@ ipcMain.handle('roblox:getUserProfile', async (_, userId, fallbackProfile = null
     const resolvedUserId = userId ?? fallbackProfile?.id
     if (!resolvedUserId) return { error: 'Missing userId' }
 
-    const cookie = await getRobloxCookie()
+    const cookie = await robloxApi.getRobloxCookie()
     const cookieHeader = cookie ? { Cookie: `.ROBLOSECURITY=${cookie}` } : {}
     const token = await getValidAccessToken().catch(() => null)
     const authHeader = token ? { Authorization: `Bearer ${token}` } : {}
@@ -517,7 +500,7 @@ ipcMain.handle('roblox:getFullUserProfile', async (_, userId) => {
   try {
     if (!userId) throw new Error('Missing userId')
 
-    const cookie = await getRobloxCookie()
+    const cookie = await robloxApi.getRobloxCookie()
     const cookieHeader = cookie ? { Cookie: `.ROBLOSECURITY=${cookie}` } : {}
     const token = await getValidAccessToken().catch(() => null)
     const authHeader = token ? { Authorization: `Bearer ${token}` } : {}
@@ -763,87 +746,32 @@ ipcMain.handle('roblox:getFullUserProfile', async (_, userId) => {
 })
 
 // ---- GAME DETAILS HELPER -----------------------------------
-async function fetchGameDetails(universeIds) {
-  if (!universeIds || !universeIds.length) return []
-  const chunkSize = 20
-  const results = []
-  const seen = new Set()
-
-  for (let i = 0; i < universeIds.length; i += chunkSize) {
-    const ids = universeIds.slice(i, i + chunkSize).join(',')
-    const [gamesRes, thumbsRes] = await Promise.all([
-      fetchWithRetries(() => fetch(`https://games.roblox.com/v1/games?universeIds=${ids}`, { headers: DEFAULT_FETCH_HEADERS })),
-      fetchWithRetries(() => fetch(`https://thumbnails.roblox.com/v1/games/icons?universeIds=${ids}&size=150x150&format=Png`, { headers: DEFAULT_FETCH_HEADERS }))
-    ])
-
-    if (!gamesRes) {
-      console.warn('[main] fetchGameDetails skipped chunk; no gamesRes', ids)
-      continue
-    }
-    if (!gamesRes.ok) {
-      console.warn('[main] fetchGameDetails skipped chunk; bad gamesRes status', gamesRes.status, ids)
-      continue
-    }
-
-    let gamesData = null
-    try {
-      gamesData = await gamesRes.json()
-    } catch (e) {
-      console.warn('[main] fetchGameDetails gamesRes json failed', e.message, ids)
-      continue
-    }
-    if (!gamesData || !Array.isArray(gamesData.data)) {
-      console.warn('[main] fetchGameDetails missing games data', ids)
-      continue
-    }
-
-    const thumbsData = thumbsRes && thumbsRes.ok ? await thumbsRes.json().catch(() => ({ data: [] })) : { data: [] }
-    const thumbMap   = {}
-    for (const t of thumbsData.data || []) thumbMap[t.targetId] = t.imageUrl
-
-    for (const g of gamesData.data) {
-      if (!g || !g.id || seen.has(g.id)) continue
-      seen.add(g.id)
-      results.push({
-        id:           g.id,
-        rootPlaceId:  g.rootPlaceId,
-        name:         g.name,
-        playing:      g.playing || 0,
-        visits:       g.visits  || 0,
-        rating:       (g.totalUpVotes + g.totalDownVotes) > 0
-                        ? Math.round(g.totalUpVotes / (g.totalUpVotes + g.totalDownVotes) * 100)
-                        : null,
-        thumbnailUrl: thumbMap[g.id] || null,
-      })
-    }
-  }
-
-  return results
-}
-
 ipcMain.handle('roblox:getGames', async (_, universeIds) => {
-  try { return await fetchGameDetails(universeIds) }
-  catch (e) { return { error: e.message } }
+  try {
+    return await robloxApi.fetchGameDetails(universeIds)
+  } catch (e) {
+    return { error: e.message }
+  }
 })
 
 // ---- CONTINUE PLAYING --------------------------------------
 ipcMain.handle('roblox:getRecentlyPlayed', async () => {
   const FALLBACK = [2753915549, 301549643, 155615604, 189707, 223316882, 1537690962, 286090429, 606849621]
   try {
-    const cookie = await getRobloxCookie()
-    if (!cookie) return fetchGameDetails(FALLBACK)
+    const cookie = await robloxApi.getRobloxCookie()
+    if (!cookie) return robloxApi.fetchGameDetails(FALLBACK)
 
-    const sorts = await fetchOmniSorts(cookie)
+    const sorts = await robloxApi.fetchOmniSorts(cookie)
     const ids   = sorts['Continue'] || sorts['ContinuePlaying'] || sorts['MyRecent'] || []
 
     if (ids.length) {
       console.log(`[getRecentlyPlayed] found ${ids.length} games via omni-recommendation`)
-      return fetchGameDetails(ids)
+      return robloxApi.fetchGameDetails(ids, 24)
     }
-    return fetchGameDetails(FALLBACK)
+    return robloxApi.fetchGameDetails(FALLBACK)
   } catch (e) {
     console.error('[getRecentlyPlayed]', e.message)
-    return fetchGameDetails(FALLBACK)
+    return robloxApi.fetchGameDetails(FALLBACK)
   }
 })
 
@@ -852,29 +780,29 @@ ipcMain.handle('roblox:getFavoriteGames', async () => {
   const FALLBACK = [1537690962, 606849621, 2788229376, 3926305882, 4465864456, 286090429, 2753915549, 301549643]
   try {
     const token = await getValidAccessToken()
-    if (!token) return fetchGameDetails(FALLBACK)
+    if (!token) return robloxApi.fetchGameDetails(FALLBACK)
 
     const uiRes = await fetch('https://apis.roblox.com/oauth/v1/userinfo', {
       headers: { Authorization: `Bearer ${token}` }
     })
-    if (!uiRes.ok) return fetchGameDetails(FALLBACK)
+    if (!uiRes.ok) return robloxApi.fetchGameDetails(FALLBACK)
     const { sub: userId } = await uiRes.json()
 
-    const cookie  = await getRobloxCookie()
+    const cookie  = await robloxApi.getRobloxCookie()
     const headers = cookie ? { Cookie: `.ROBLOSECURITY=${cookie}` } : {}
 
     const res = await fetch(
       `https://games.roblox.com/v2/users/${userId}/favorite/games?accessFilter=2&limit=10&sortOrder=Desc`,
       { headers }
     )
-    if (!res.ok) return fetchGameDetails(FALLBACK)
+    if (!res.ok) return robloxApi.fetchGameDetails(FALLBACK)
 
     const data = await res.json()
     const ids  = (data.data || []).map(g => g.id).filter(Boolean)
-    return ids.length ? fetchGameDetails(ids) : fetchGameDetails(FALLBACK)
+    return ids.length ? robloxApi.fetchGameDetails(ids) : robloxApi.fetchGameDetails(FALLBACK)
   } catch (e) {
     console.error('[getFavoriteGames]', e.message)
-    return fetchGameDetails(FALLBACK)
+    return robloxApi.fetchGameDetails(FALLBACK)
   }
 })
 
@@ -882,10 +810,10 @@ ipcMain.handle('roblox:getFavoriteGames', async () => {
 ipcMain.handle('roblox:getRecommended', async () => {
   const FALLBACK = [4465864456, 2788229376, 3926305882, 1537690962, 606849621, 286090429, 189707, 223316882]
   try {
-    const cookie = await getRobloxCookie()
-    if (!cookie) return fetchGameDetails(FALLBACK)
+    const cookie = await robloxApi.getRobloxCookie()
+    if (!cookie) return robloxApi.fetchGameDetails(FALLBACK)
 
-    const sorts = await fetchOmniSorts(cookie)
+    const sorts = await robloxApi.fetchOmniSorts(cookie)
     const ids   =
       sorts['Recommended For You'] ||
       sorts['RecommendedForYou']   ||
@@ -896,12 +824,12 @@ ipcMain.handle('roblox:getRecommended', async () => {
 
     if (ids.length) {
       console.log(`[getRecommended] found ${ids.length} games via omni-recommendation`)
-      return fetchGameDetails(ids)
+      return robloxApi.fetchGameDetails(ids, 24)
     }
-    return fetchGameDetails(FALLBACK)
+    return robloxApi.fetchGameDetails(FALLBACK)
   } catch (e) {
     console.error('[getRecommended]', e.message)
-    return fetchGameDetails(FALLBACK)
+    return robloxApi.fetchGameDetails(FALLBACK)
   }
 })
 
@@ -911,7 +839,7 @@ ipcMain.handle('roblox:getRecommended', async () => {
 // count, favorites count, and resolved creator name.
 ipcMain.handle('roblox:getGameDetail', async (_, universeId) => {
   try {
-    const cookie = await getRobloxCookie()
+    const cookie = await robloxApi.getRobloxCookie()
     const cookieHeader = cookie ? { Cookie: `.ROBLOSECURITY=${cookie}` } : {}
 
     const [gameRes, iconRes, screenshotRes, serverRes] = await Promise.allSettled([
@@ -995,142 +923,16 @@ ipcMain.handle('roblox:getGameDetail', async (_, universeId) => {
   }
 })
 
-// ---- SEARCH / BROWSE HELPER ---------------------------------
-const DEFAULT_FETCH_HEADERS = {
-  'Accept': 'application/json, text/plain, */*',
-  'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)',
-}
-
-// games.roblox.com/v1/games/list (the old "model.keyword=" endpoint)
-// has been deprecated and no longer returns useful results. Roblox's
-// site search now runs through the omni-search endpoint, which returns
-// a list of universeIds we can then feed into fetchGameDetails().
-async function fetchWithRetries(fn, retries = 5, baseDelay = 500) {
-  let attempt = 0
-  let lastError = null
-  while (attempt < retries) {
-    try {
-      const res = await fn()
-      const status = res?.status
-      if (res && res.ok) return res
-      if (res && [429, 500, 502, 503, 504].includes(status)) {
-        const wait = baseDelay * Math.pow(2, attempt)
-        console.warn(`[main] fetchWithRetries retry ${attempt + 1}/${retries} status=${status}, waiting ${wait}ms`)
-        await new Promise(r => setTimeout(r, wait))
-        attempt++
-        continue
-      }
-      lastError = res ? new Error(`HTTP ${status}`) : new Error('No response')
-      if (res) {
-        console.warn(`[main] fetchWithRetries non-retriable status=${status}`)
-      }
-      return res
-    } catch (e) {
-      lastError = e
-      const wait = baseDelay * Math.pow(2, attempt)
-      console.warn(`[main] fetchWithRetries exception ${attempt + 1}/${retries}: ${e.message}, waiting ${wait}ms`)
-      await new Promise(r => setTimeout(r, wait))
-      attempt++
-    }
-  }
-  console.error('[main] fetchWithRetries failed after retries', lastError?.message)
-  return null
-}
-
-async function fetchOmniSearchIds(query, cookie, pageToken) {
-  const params = new URLSearchParams({
-    searchQuery: query,
-    sessionId:   crypto.randomUUID(),
-    pageType:    'all',
-  })
-  if (pageToken) params.set('pageToken', pageToken)
-
-  const headers = {
-    'Accept': 'application/json, text/plain, */*',
-    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)',
-  }
-  if (cookie) headers['Cookie'] = `.ROBLOSECURITY=${cookie}`
-
-  const res = await fetchWithRetries(() => fetch(`https://apis.roblox.com/search-api/omni-search?${params}`, { headers }))
-  if (!res) throw new Error('omni-search failed after retries')
-  if (!res.ok) throw new Error(`omni-search failed: ${res.status}`)
-  const data = await res.json()
-
-  const ids = []
-  for (const result of data.searchResults || []) {
-    const items = Array.isArray(result.contents) ? result.contents : [result]
-    for (const item of items) {
-      const type = (item.contentType || result.contentType || '').toLowerCase()
-      if (type && type !== 'game' && type !== 'place') continue
-      const id = item.contentId ?? item.universeId ?? item.rootPlaceId ?? item.id
-      if (id) ids.push(Number(id))
-    }
-  }
-  return { ids: [...new Set(ids)].filter(n => !Number.isNaN(n)), nextPageToken: data.nextPageToken || null }
-}
-
 ipcMain.handle('roblox:searchGames', async (_, keyword) => {
   try {
-    const cookie = await getRobloxCookie()
-    const { ids } = await fetchOmniSearchIds(keyword, cookie)
-    if (!ids.length) return []
-    return await fetchGameDetails(ids.slice(0, 24))
+    return await robloxApi.searchGames(keyword)
   } catch (e) {
     return { error: e.message }
   }
 })
 
-// ---- BROWSE / DISCOVER GAMES --------------------------------
-// Used by the Games page genre filters + sort + "See All" + Load More.
-const GENRE_KEYWORDS = {
-  all:       'Popular Games',
-  rpg:       'RPG',
-  shooter:   'Shooter',
-  roleplay:  'Roleplay',
-  simulator: 'Simulator',
-  obby:      'Obby',
-  tycoon:    'Tycoon',
-}
-
-// omni-search is cursor-paginated (pageToken), not offset-based, so we
-// cache the accumulated id list + cursor per genre and slice from it.
-const browseCache = new Map() // genre -> { ids: number[], nextPageToken, exhausted }
-
-async function getBrowsePage(genre, page, pageSize) {
-  const keyword = GENRE_KEYWORDS[genre] || GENRE_KEYWORDS.all
-  let entry = browseCache.get(genre)
-  if (!entry) {
-    entry = { ids: [], nextPageToken: undefined, exhausted: false }
-    browseCache.set(genre, entry)
-  }
-
-  const cookie = await getRobloxCookie()
-  while (entry.ids.length < (page + 1) * pageSize && !entry.exhausted) {
-    const { ids, nextPageToken } = await fetchOmniSearchIds(keyword, cookie, entry.nextPageToken)
-    if (!ids.length) {
-      if (nextPageToken) {
-        entry.nextPageToken = nextPageToken
-        continue
-      }
-      entry.exhausted = true
-      break
-    }
-    for (const id of ids) {
-      if (!entry.ids.includes(id)) entry.ids.push(id)
-    }
-    entry.nextPageToken = nextPageToken || undefined
-    if (!nextPageToken) entry.exhausted = true
-  }
-
-  return entry.ids.slice(page * pageSize, (page + 1) * pageSize)
-}
-
 ipcMain.handle('roboot:clearBrowseCache', (_, genre) => {
-  if (!genre) {
-    browseCache.clear()
-  } else {
-    browseCache.delete(genre)
-  }
+  robloxApi.clearBrowseCache(genre)
   return { success: true }
 })
 
@@ -1138,16 +940,9 @@ ipcMain.handle('roblox:browseGames', async (_, opts = {}) => {
   const { genre = 'all', sort = 'popular', page = 0, maxRows = 24 } = opts || {}
   console.log('[main] roblox:browseGames', { genre, sort, page, maxRows })
   try {
-    let ids = await getBrowsePage(genre, page, maxRows)
-    console.log('[main] browse ids count', ids.length)
-    if (!ids.length && genre !== 'all') {
-      const keyword = GENRE_KEYWORDS[genre] || GENRE_KEYWORDS.all
-      const fallback = await fetchOmniSearchIds(keyword, await getRobloxCookie())
-      ids = fallback.ids.slice(0, maxRows)
-      console.log('[main] browse fallback ids count', ids.length)
-    }
+    const ids = await robloxApi.browseGames(genre, sort, page, maxRows)
     if (!ids.length) return []
-    let games = await fetchGameDetails(ids)
+    let games = await robloxApi.fetchGameDetails(ids, maxRows)
     console.log('[main] fetchGameDetails returned', games.length)
     if (sort === 'rated') {
       games = games.slice().sort((a, b) => (b.rating ?? -1) - (a.rating ?? -1))
@@ -1182,8 +977,8 @@ ipcMain.handle('roblox:launch', async () => {
 
 // ---- CUSTOM THEMES -------------------------------------------
 ipcMain.handle('theme:list', () => {
-  const { activeTheme } = readSettings()
-  return { themes: listThemeFiles(), active: activeTheme || null }
+  const { theme } = readSettings()
+  return { themes: listThemeFiles(), active: theme || null }
 })
 
 ipcMain.handle('theme:upload', async () => {

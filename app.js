@@ -56,6 +56,33 @@ animateCanvas()
 // ---- STATE -------------------------------------------------
 let currentUser = null
 let isLoggedIn = false
+let currentFriends = []
+
+function getVisibleItemCount(row, minItemWidth = 150, gap = 10, maxItems = 10) {
+  if (!row) return Math.min(maxItems, 1)
+  const width = row.clientWidth
+  if (!width) return Math.min(maxItems, 1)
+  const count = Math.floor((width + gap) / (minItemWidth + gap))
+  return Math.max(1, Math.min(count, maxItems))
+}
+
+function refreshHomeRows() {
+  renderGameRow('.continue-row',    HOME_ROWS.recent,      10)
+  renderGameRow('.favorites-row',   HOME_ROWS.favs,        10)
+  renderGameRow('.recommended-row', HOME_ROWS.recommended, 10)
+}
+
+function refreshLayout() {
+  refreshHomeRows()
+  renderFriends(currentFriends)
+}
+
+let layoutResizeTimer = null
+window.addEventListener('resize', () => {
+  resize()
+  clearTimeout(layoutResizeTimer)
+  layoutResizeTimer = setTimeout(refreshLayout, 120)
+})
 
 // ---- SPLASH SCREEN -------------------------------------------
 // Shown immediately on launch (it's already in the DOM/painted before
@@ -221,8 +248,9 @@ function renderFriendIdentity(card, friend) {
 }
 
 function renderFriends(friends) {
-  const online = friends.filter(f => f.isOnline)
-  const offline = friends.filter(f => !f.isOnline)
+  currentFriends = Array.isArray(friends) ? friends : []
+  const online = currentFriends.filter(f => f.isOnline)
+  const offline = currentFriends.filter(f => !f.isOnline)
 
   // Update stats
   document.querySelector('.fstat-num.online-count').textContent = online.length
@@ -234,7 +262,8 @@ function renderFriends(friends) {
   if (sectionCount) sectionCount.textContent = `(${friends.length})`
 
   connRow.innerHTML = ''
-  friends.slice(0, 10).forEach(f => {
+  const visibleConnections = getVisibleItemCount(connRow, 72, 8, 20)
+  currentFriends.slice(0, visibleConnections).forEach(f => {
     const div = document.createElement('div')
     div.className = 'conn-avatar'
     const colors = ['#e53935','#1565c0','#2e7d32','#6a1b9a','#f57f17','#00695c','#ad1457','#283593']
@@ -353,20 +382,22 @@ async function loadFeaturedGames() {
   HOME_ROWS.recent      = Array.isArray(recent)      ? recent      : []
   HOME_ROWS.favs        = Array.isArray(favs)        ? favs        : []
   HOME_ROWS.recommended = Array.isArray(recommended) ? recommended : []
-  renderGameRow('.continue-row',    HOME_ROWS.recent.slice(0,6))
-  renderGameRow('.favorites-row',   HOME_ROWS.favs.slice(0,6))
-  renderGameRow('.recommended-row', HOME_ROWS.recommended.slice(0,6))
+  renderGameRow('.continue-row',    HOME_ROWS.recent.slice(0,10))
+  renderGameRow('.favorites-row',   HOME_ROWS.favs.slice(0,10))
+  renderGameRow('.recommended-row', HOME_ROWS.recommended.slice(0,10))
 
   // Initial Games page load (All / Most Popular)
   await loadGamesPage({ reset: true })
 }
 
 
-function renderGameRow(selector, games) {
+function renderGameRow(selector, games, maxCount = 10) {
   const row = document.querySelector(selector)
   if (!row) return
+  const visibleCount = getVisibleItemCount(row, 150, 10, maxCount)
+  const visibleGames = Array.isArray(games) ? games.slice(0, visibleCount) : []
   row.innerHTML = ''
-  games.forEach(game => {
+  visibleGames.forEach(game => {
     const card = document.createElement('div')
     card.className = 'game-card'
     card.dataset.name = game.name
